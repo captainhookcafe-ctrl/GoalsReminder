@@ -30,6 +30,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -46,6 +52,8 @@ public class MainActivity extends android.app.Activity {
     private DbHelper db;
     private FrameLayout host;
     private int screen=0;
+    private static final int REQ_EXPORT_BACKUP=501;
+    private static final int REQ_IMPORT_BACKUP=502;
 
     @Override protected void onCreate(Bundle b){
         super.onCreate(b);
@@ -65,14 +73,14 @@ public class MainActivity extends android.app.Activity {
     private void buildShell(){
         FrameLayout root=new FrameLayout(this); root.setBackgroundColor(BG); root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         host=new FrameLayout(this);
-        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(-1,-1); hp.setMargins(0,0,dp(76),0); root.addView(host,hp);
+        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(-1,-1); hp.setMargins(dp(76),0,0,0); root.addView(host,hp);
 
         LinearLayout rail=new LinearLayout(this); rail.setOrientation(LinearLayout.VERTICAL);
         rail.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL); rail.setPadding(dp(5),dp(18),dp(5),0); rail.setBackgroundColor(Color.rgb(17,20,27));
         Button a=rail("☷\nامروز"), h=rail("◷\nتاریخچه"), n=rail("▥\nآنالیز");
         rail.addView(a); rail.addView(h); rail.addView(n);
         a.setOnClickListener(v->showToday()); h.setOnClickListener(v->showHistory()); n.setOnClickListener(v->showAnalysisWeek());
-        root.addView(rail,new FrameLayout.LayoutParams(dp(76),-1,Gravity.END));
+        root.addView(rail,new FrameLayout.LayoutParams(dp(76),-1,Gravity.LEFT));
         setContentView(root);
     }
 
@@ -104,6 +112,20 @@ public class MainActivity extends android.app.Activity {
         int period=LocalTime.now().getHour()<12?0:1;
         TextView pl=small(period==0?"نیمه اول روز · ۰۰:۰۰ تا ۱۲:۰۰":"نیمه دوم روز · ۱۲:۰۰ تا ۲۴:۰۰"); pl.setTextColor(ACCENT); p.addView(pl);
         notesEditor(p,today,period);
+
+        p.addView(section("پشتیبان‌گیری"));
+        TextView backupInfo=small("فایل پشتیبان فقط در محلی که خودت روی گوشی انتخاب می‌کنی ذخیره می‌شود.");
+        p.addView(backupInfo);
+        LinearLayout backupActions=new LinearLayout(this);
+        backupActions.setOrientation(LinearLayout.HORIZONTAL);
+        Button restore=compact("بازیابی");
+        Button backup=compact("پشتیبان‌گیری");
+        backupActions.addView(restore,new LinearLayout.LayoutParams(0,dp(52),1));
+        backupActions.addView(backup,new LinearLayout.LayoutParams(0,dp(52),1));
+        restore.setOnClickListener(v->confirmRestore());
+        backup.setOnClickListener(v->chooseBackupLocation());
+        p.addView(backupActions);
+
         sv.addView(p); host.addView(sv);
     }
 
@@ -210,6 +232,106 @@ public class MainActivity extends android.app.Activity {
         DatePickerDialog a=new DatePickerDialog(this,(v,y,m,d)->{x[0]=LocalDate.of(y,m+1,d);
             DatePickerDialog z=new DatePickerDialog(this,(v2,y2,m2,d2)->{x[1]=LocalDate.of(y2,m2+1,d2);if(x[1].isBefore(x[0])){Toast.makeText(this,"تاریخ پایان قبل از شروع است",Toast.LENGTH_SHORT).show();return;}showAnalysis(x[0],x[1],"بازه دلخواه");},x[1].getYear(),x[1].getMonthValue()-1,x[1].getDayOfMonth());z.show();
         },x[0].getYear(),x[0].getMonthValue()-1,x[0].getDayOfMonth());a.show();
+    }
+
+
+    private void chooseBackupLocation(){
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/octet-stream");
+        i.putExtra(Intent.EXTRA_TITLE,"GoalsReminder-backup-"+LocalDate.now()+".db");
+        startActivityForResult(i,REQ_EXPORT_BACKUP);
+    }
+
+    private void confirmRestore(){
+        new AlertDialog.Builder(this)
+                .setTitle("بازیابی پشتیبان")
+                .setMessage("بازیابی، اطلاعات فعلی برنامه را با فایل پشتیبان جایگزین می‌کند. ادامه می‌دهی؟")
+                .setPositiveButton("ادامه",(d,w)->chooseRestoreFile())
+                .setNegativeButton("انصراف",null)
+                .show();
+    }
+
+    private void chooseRestoreFile(){
+        Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/octet-stream");
+        startActivityForResult(i,REQ_IMPORT_BACKUP);
+    }
+
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(resultCode!=RESULT_OK || data==null || data.getData()==null) return;
+        Uri uri=data.getData();
+        if(requestCode==REQ_EXPORT_BACKUP) exportBackup(uri);
+        else if(requestCode==REQ_IMPORT_BACKUP) importBackup(uri);
+    }
+
+    private void exportBackup(Uri uri){
+        try{
+            db.close();
+            File src=getDatabasePath("goals_reminder.db");
+            try(InputStream in=new FileInputStream(src);
+                OutputStream out=getContentResolver().openOutputStream(uri,"w")){
+                if(out==null) throw new IllegalStateException("مسیر ذخیره در دسترس نیست");
+                byte[] buf=new byte[8192];
+                int n;
+                while((n=in.read(buf))>0) out.write(buf,0,n);
+                out.flush();
+            }
+            db=new DbHelper(this);
+            Toast.makeText(this,"پشتیبان با موفقیت ذخیره شد",Toast.LENGTH_LONG).show();
+        }catch(Exception e){
+            db=new DbHelper(this);
+            Toast.makeText(this,"ذخیره پشتیبان ناموفق بود",Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void importBackup(Uri uri){
+        File tmp=new File(getCacheDir(),"goals_restore_tmp.db");
+        try{
+            try(InputStream in=getContentResolver().openInputStream(uri);
+                OutputStream out=new FileOutputStream(tmp)){
+                if(in==null) throw new IllegalStateException("فایل قابل خواندن نیست");
+                byte[] buf=new byte[8192];
+                int n;
+                while((n=in.read(buf))>0) out.write(buf,0,n);
+                out.flush();
+            }
+
+            byte[] header=new byte[16];
+            try(InputStream check=new FileInputStream(tmp)){
+                if(check.read(header)!=16 || !new String(header,StandardCharsets.US_ASCII).startsWith("SQLite format 3"))
+                    throw new IllegalArgumentException("not sqlite");
+            }
+
+            db.close();
+            File target=getDatabasePath("goals_reminder.db");
+            File parent=target.getParentFile();
+            if(parent!=null && !parent.exists()) parent.mkdirs();
+            try(InputStream in=new FileInputStream(tmp);
+                OutputStream out=new FileOutputStream(target,false)){
+                byte[] buf=new byte[8192];
+                int n;
+                while((n=in.read(buf))>0) out.write(buf,0,n);
+                out.flush();
+            }
+            new File(target.getPath()+"-wal").delete();
+            new File(target.getPath()+"-shm").delete();
+            new File(target.getPath()+"-journal").delete();
+
+            db=new DbHelper(this);
+            db.getReadableDatabase();
+            db.ensureDay(LocalDate.now());
+            AlarmScheduler.scheduleAll(this);
+            Toast.makeText(this,"پشتیبان با موفقیت بازیابی شد",Toast.LENGTH_LONG).show();
+            render();
+        }catch(Exception e){
+            db=new DbHelper(this);
+            Toast.makeText(this,"فایل پشتیبان معتبر نیست یا بازیابی ناموفق بود",Toast.LENGTH_LONG).show();
+        }finally{
+            tmp.delete();
+        }
     }
 
     private boolean canExact(){if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true;return ((AlarmManager)getSystemService(ALARM_SERVICE)).canScheduleExactAlarms();}
