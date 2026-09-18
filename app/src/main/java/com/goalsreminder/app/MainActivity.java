@@ -822,7 +822,9 @@ public class MainActivity extends android.app.Activity {
         LinearLayout p=page();
 
         p.addView(title("Backup & Restore"));
-        TextView intro=small("پشتیبان‌ها فقط در فایلی که خودت انتخاب می‌کنی ذخیره می‌شوند و به هیچ سروری ارسال نمی‌شوند.");
+        TextView intro=small(tr(
+                "پشتیبان‌ها فقط در فایلی که خودت انتخاب می‌کنی ذخیره می‌شوند و به هیچ سروری ارسال نمی‌شوند.",
+                "Backups are saved only to a file you choose and are never uploaded to a server."));
         intro.setTextColor(Color.rgb(159,174,205));
         intro.setPadding(0,dp(6),0,dp(16));
         p.addView(intro);
@@ -830,7 +832,9 @@ public class MainActivity extends android.app.Activity {
         LinearLayout full=card();
         TextView fullTitle=menuHeading("Full Backup");
         full.addView(fullTitle);
-        full.addView(small("همه کارها، تمام تاریخچه و همه یادداشت‌ها"));
+        full.addView(small(tr(
+                "همه کارها، تمام تاریخچه و همه یادداشت‌ها",
+                "All tasks, complete history and all journal notes")));
         Button fullBtn=action("Create Full Backup");
         fullBtn.setOnClickListener(v->startBackup(true,null,null));
         full.addView(fullBtn);
@@ -838,10 +842,12 @@ public class MainActivity extends android.app.Activity {
 
         LinearLayout range=card();
         range.addView(menuHeading("Date Range Backup"));
-        range.addView(small("فقط تاریخچه و یادداشت‌های بازه‌ای که انتخاب می‌کنی"));
+        range.addView(small(tr(
+                "فقط تاریخچه و یادداشت‌های بازه‌ای که انتخاب می‌کنی",
+                "Only history and journal notes from the date range you choose")));
 
-        Button from=compact("از: "+PersianDate.format(rangeFrom));
-        Button to=compact("تا: "+PersianDate.format(rangeTo));
+        Button from=compact(tr("از: ","From: ")+localizedDate(rangeFrom,false));
+        Button to=compact(tr("تا: ","To: ")+localizedDate(rangeTo,false));
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(52));
         bp.setMargins(0,dp(8),0,dp(4));
         range.addView(from,bp);
@@ -855,7 +861,7 @@ public class MainActivity extends android.app.Activity {
         Button rangeBtn=action("Create Range Backup");
         rangeBtn.setOnClickListener(v->{
             if(rangeTo.isBefore(rangeFrom)){
-                Toast.makeText(this,"تاریخ پایان قبل از شروع است",Toast.LENGTH_SHORT).show();
+                Toast.makeText(this,tr("تاریخ پایان قبل از شروع است","End date is before start date"),Toast.LENGTH_SHORT).show();
                 return;
             }
             startBackup(false,rangeFrom,rangeTo);
@@ -865,7 +871,9 @@ public class MainActivity extends android.app.Activity {
 
         LinearLayout restore=card();
         restore.addView(menuHeading("Restore"));
-        restore.addView(small("Full Backup جایگزین کامل است؛ بکاپ بازه‌ای با تاریخچه فعلی ادغام می‌شود."));
+        restore.addView(small(tr(
+                "Full Backup جایگزین کامل است؛ بکاپ بازه‌ای با تاریخچه فعلی ادغام می‌شود.",
+                "A Full Backup replaces current data; a range backup merges into existing history.")));
         Button restoreBtn=compact("Choose Backup File");
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(52));
         rp.setMargins(0,dp(10),0,0);
@@ -916,9 +924,9 @@ public class MainActivity extends android.app.Activity {
                 writer.write(json.toString(2));
                 writer.flush();
             }
-            Toast.makeText(this,full?"Full Backup ساخته شد":"بکاپ بازه زمانی ساخته شد",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,full?tr("Full Backup ساخته شد","Full Backup created"):tr("بکاپ بازه زمانی ساخته شد","Range backup created"),Toast.LENGTH_LONG).show();
         }catch(Exception e){
-            Toast.makeText(this,"ساخت فایل پشتیبان ناموفق بود",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,tr("ساخت فایل پشتیبان ناموفق بود","Backup creation failed"),Toast.LENGTH_LONG).show();
         }
     }
 
@@ -934,16 +942,18 @@ public class MainActivity extends android.app.Activity {
             if(!"GoalsReminderBackup".equals(json.optString("format")))throw new IllegalArgumentException("invalid");
             boolean full="full".equals(json.optString("type"));
             String message=full
-                    ?"این Full Backup اطلاعات فعلی برنامه را جایگزین می‌کند. ادامه می‌دهی؟"
-                    :"این بکاپ بازه‌ای با تاریخچه و یادداشت‌های فعلی ادغام می‌شود. ادامه می‌دهی؟";
+                    ?tr("این Full Backup اطلاعات فعلی برنامه را جایگزین می‌کند. ادامه می‌دهی؟",
+                            "This Full Backup will replace the app's current data. Continue?")
+                    :tr("این بکاپ بازه‌ای با تاریخچه و یادداشت‌های فعلی ادغام می‌شود. ادامه می‌دهی؟",
+                            "This range backup will merge with current history and notes. Continue?");
             new AlertDialog.Builder(this)
                     .setTitle("Restore Backup")
                     .setMessage(message)
-                    .setPositiveButton("بازیابی",(d,w)->restoreParsedBackup(json))
-                    .setNegativeButton("انصراف",null)
+                    .setPositiveButton(tr("بازیابی","Restore"),(d,w)->restoreParsedBackup(json))
+                    .setNegativeButton(tr("انصراف","Cancel"),null)
                     .show();
         }catch(Exception e){
-            Toast.makeText(this,"فایل پشتیبان معتبر نیست",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,tr("فایل پشتیبان معتبر نیست","Invalid backup file"),Toast.LENGTH_LONG).show();
         }
     }
 
@@ -951,10 +961,10 @@ public class MainActivity extends android.app.Activity {
         try{
             String type=db.restoreBackup(json);
             AlarmScheduler.scheduleAll(this);
-            Toast.makeText(this,"full".equals(type)?"Full Backup بازیابی شد":"بازه تاریخی بازیابی و ادغام شد",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"full".equals(type)?tr("Full Backup بازیابی شد","Full Backup restored"):tr("بازه تاریخی بازیابی و ادغام شد","Range backup restored and merged"),Toast.LENGTH_LONG).show();
             render();
         }catch(Exception e){
-            Toast.makeText(this,"بازیابی ناموفق بود",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,tr("بازیابی ناموفق بود","Restore failed"),Toast.LENGTH_LONG).show();
         }
     }
 
