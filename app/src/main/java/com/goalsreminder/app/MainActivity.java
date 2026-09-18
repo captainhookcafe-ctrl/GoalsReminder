@@ -603,13 +603,38 @@ public class MainActivity extends android.app.Activity {
 
     private void notesEditor(LinearLayout p,LocalDate date,int period){
         NoteRecord n=db.getNote(date,period);
-        String[] heads={"من بابت این اتفاقات خوشحالم","چه چیزی می‌تونه باعث بشه بگم امروز روز خوبیه؟","جمله مثبت امروز","امروز چه اتفاق خوبی افتاد؟","امروز چی یاد گرفتم؟"};
+        String[] heads=en()
+                ?new String[]{
+                    "I'm grateful for these things",
+                    "What would make today a good day?",
+                    "Today's affirmation",
+                    "What good thing happened today?",
+                    "What did I learn today?"
+                }
+                :new String[]{
+                    "من بابت این اتفاقات خوشحالم",
+                    "چه چیزی می‌تونه باعث بشه بگم امروز روز خوبیه؟",
+                    "جمله مثبت امروز",
+                    "امروز چه اتفاق خوبی افتاد؟",
+                    "امروز چی یاد گرفتم؟"
+                };
         int[][] indexes={{0,1,2},{3,4,5},{6},{7},{8}};
-        for(int g=0;g<heads.length;g++){p.addView(section(heads[g])); for(int idx:indexes[g]){
-            EditText e=input("بنویس…"); e.setText(n.values[idx]); final int fi=idx;
-            e.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){} public void onTextChanged(CharSequence s,int st,int b,int c){db.saveNoteField(date,period,fi,s.toString());} public void afterTextChanged(Editable e){}});
-            p.addView(e);
-        }}
+        for(int g=0;g<heads.length;g++){
+            p.addView(section(heads[g]));
+            for(int idx:indexes[g]){
+                EditText e=input(tr("بنویس…","Write…"));
+                e.setText(n.values[idx]);
+                final int fi=idx;
+                e.addTextChangedListener(new TextWatcher(){
+                    public void beforeTextChanged(CharSequence s,int st,int c,int a){}
+                    public void onTextChanged(CharSequence s,int st,int b,int count){
+                        db.saveNoteField(date,period,fi,s.toString());
+                    }
+                    public void afterTextChanged(Editable e){}
+                });
+                p.addView(e);
+            }
+        }
     }
 
     private void showHistory(){
