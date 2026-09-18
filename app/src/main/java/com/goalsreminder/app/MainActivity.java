@@ -14,6 +14,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -43,10 +45,14 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -70,10 +76,39 @@ public class MainActivity extends android.app.Activity {
     private LocalDate pendingBackupTo=null;
     private LocalDate rangeFrom=LocalDate.now().withDayOfMonth(1);
     private LocalDate rangeTo=LocalDate.now();
+    private String language="fa";
+    private final Handler clockHandler=new Handler(Looper.getMainLooper());
+    private final List<TaskUi> taskUis=new ArrayList<>();
+    private final Runnable taskTicker=new Runnable(){
+        @Override public void run(){
+            if(screen!=0)return;
+            boolean reorder=false;
+            LocalDateTime now=LocalDateTime.now();
+            for(TaskUi ui:new ArrayList<>(taskUis)){
+                int before=ui.state;
+                updateTaskUi(ui,now);
+                if(before!=-1 && before!=ui.state)reorder=true;
+            }
+            if(reorder){
+                showToday();
+                return;
+            }
+            clockHandler.postDelayed(this,5000);
+        }
+    };
+
+    private static class TaskUi{
+        DayTask task;
+        LinearLayout row;
+        ProgressBar bar;
+        TextView status;
+        int state=-1;
+    }
 
     @Override protected void onCreate(Bundle b){
         super.onCreate(b);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
+        language=getSharedPreferences("goals_settings",MODE_PRIVATE).getString("language","fa");
         db=new DbHelper(this); db.ensureDay(LocalDate.now());
         AlarmScheduler.scheduleAll(this);
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
@@ -84,6 +119,11 @@ public class MainActivity extends android.app.Activity {
     @Override protected void onResume(){
         super.onResume();
         if(db!=null){db.ensureDay(LocalDate.now()); AlarmScheduler.scheduleAll(this); render();}
+    }
+
+    @Override protected void onPause(){
+        super.onPause();
+        clockHandler.removeCallbacks(taskTicker);
     }
 
     private void buildShell(){
