@@ -211,6 +211,7 @@ public class MainActivity extends android.app.Activity {
         addMenuItem("History",R.drawable.ic_history,1,()->showHistory());
         addMenuItem("Analytics",R.drawable.ic_analytics,2,()->showAnalysisWeek());
         addMenuItem("Backup & Restore",R.drawable.ic_backup,3,()->showBackupRestore());
+        addMenuItem("Settings",R.drawable.ic_settings,4,()->showSettings());
 
         View spacer=new View(this);
         drawer.addView(spacer,new LinearLayout.LayoutParams(1,0,1));
@@ -277,7 +278,8 @@ public class MainActivity extends android.app.Activity {
         if(screen==0)showToday();
         else if(screen==1)showHistory();
         else if(screen==2)showAnalysisWeek();
-        else showBackupRestore();
+        else if(screen==3)showBackupRestore();
+        else showSettings();
     }
 
     private void showToday(){
