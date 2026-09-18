@@ -343,7 +343,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public JSONObject createBackup(LocalDate from, LocalDate to, boolean full) throws JSONException {
         JSONObject root = new JSONObject();
         root.put("format", "GoalsReminderBackup");
-        root.put("version", 1);
+        root.put("version", 2);
         root.put("type", full ? "full" : "range");
         root.put("createdAt", System.currentTimeMillis());
         if (!full) {
@@ -382,7 +382,7 @@ public class DbHelper extends SQLiteOpenHelper {
         JSONArray days = new JSONArray();
         String daySql = full
                 ? "SELECT task_id,date,title_snapshot,hour,minute,end_hour,end_minute,completed,completed_at FROM day_tasks ORDER BY date,task_id"
-                : "SELECT task_id,date,title_snapshot,hour,minute,completed,completed_at FROM day_tasks WHERE date BETWEEN ? AND ? ORDER BY date,task_id";
+                : "SELECT task_id,date,title_snapshot,hour,minute,end_hour,end_minute,completed,completed_at FROM day_tasks WHERE date BETWEEN ? AND ? ORDER BY date,task_id";
         String[] dayArgs = full ? null : new String[]{from.toString(), to.toString()};
         try (Cursor c = getReadableDatabase().rawQuery(daySql, dayArgs)) {
             while (c.moveToNext()) {
