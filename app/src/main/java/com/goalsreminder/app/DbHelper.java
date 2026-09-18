@@ -18,7 +18,7 @@ import org.json.JSONObject;
 
 public class DbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "goals_reminder.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public DbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -31,6 +31,8 @@ public class DbHelper extends SQLiteOpenHelper {
                 "title TEXT NOT NULL," +
                 "hour INTEGER NOT NULL," +
                 "minute INTEGER NOT NULL," +
+                "end_hour INTEGER NOT NULL DEFAULT -1," +
+                "end_minute INTEGER NOT NULL DEFAULT -1," +
                 "day_mask INTEGER NOT NULL," +
                 "active INTEGER NOT NULL DEFAULT 1," +
                 "created_at INTEGER NOT NULL)");
@@ -42,6 +44,8 @@ public class DbHelper extends SQLiteOpenHelper {
                 "title_snapshot TEXT NOT NULL," +
                 "hour INTEGER NOT NULL," +
                 "minute INTEGER NOT NULL," +
+                "end_hour INTEGER NOT NULL DEFAULT -1," +
+                "end_minute INTEGER NOT NULL DEFAULT -1," +
                 "completed INTEGER NOT NULL DEFAULT 0," +
                 "completed_at INTEGER," +
                 "UNIQUE(task_id, date))");
@@ -67,14 +71,21 @@ public class DbHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Future versions must preserve user data here.
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN end_hour INTEGER NOT NULL DEFAULT -1");
+            db.execSQL("ALTER TABLE tasks ADD COLUMN end_minute INTEGER NOT NULL DEFAULT -1");
+            db.execSQL("ALTER TABLE day_tasks ADD COLUMN end_hour INTEGER NOT NULL DEFAULT -1");
+            db.execSQL("ALTER TABLE day_tasks ADD COLUMN end_minute INTEGER NOT NULL DEFAULT -1");
+        }
     }
 
-    public long addTask(String title, int hour, int minute, int dayMask) {
+    public long addTask(String title, int hour, int minute, int endHour, int endMinute, int dayMask) {
         ContentValues v = new ContentValues();
         v.put("title", title);
         v.put("hour", hour);
         v.put("minute", minute);
+        v.put("end_hour", endHour);
+        v.put("end_minute", endMinute);
         v.put("day_mask", dayMask);
         v.put("active", 1);
         v.put("created_at", System.currentTimeMillis());
@@ -83,11 +94,13 @@ public class DbHelper extends SQLiteOpenHelper {
         return id;
     }
 
-    public void updateTask(long id, String title, int hour, int minute, int dayMask) {
+    public void updateTask(long id, String title, int hour, int minute, int endHour, int endMinute, int dayMask) {
         ContentValues v = new ContentValues();
         v.put("title", title);
         v.put("hour", hour);
         v.put("minute", minute);
+        v.put("end_hour", endHour);
+        v.put("end_minute", endMinute);
         v.put("day_mask", dayMask);
         getWritableDatabase().update("tasks", v, "id=?", new String[]{String.valueOf(id)});
         syncTodayTask(id);
@@ -102,7 +115,7 @@ public class DbHelper extends SQLiteOpenHelper {
 
     public TaskItem getTask(long id) {
         try (Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,title,hour,minute,day_mask,active FROM tasks WHERE id=?",
+                "SELECT id,title,hour,minute,end_hour,end_minute,day_mask,active FROM tasks WHERE id=?",
                 new String[]{String.valueOf(id)})) {
             if (!c.moveToFirst()) return null;
             return taskFromCursor(c);
@@ -112,7 +125,7 @@ public class DbHelper extends SQLiteOpenHelper {
     public List<TaskItem> getActiveTasks() {
         List<TaskItem> result = new ArrayList<>();
         try (Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,title,hour,minute,day_mask,active FROM tasks WHERE active=1 ORDER BY hour,minute,id", null)) {
+                "SELECT id,title,hour,minute,end_hour,end_minute,day_mask,active FROM tasks WHERE active=1 ORDER BY hour,minute,id", null)) {
             while (c.moveToNext()) result.add(taskFromCursor(c));
         }
         return result;
@@ -124,8 +137,10 @@ public class DbHelper extends SQLiteOpenHelper {
         t.title = c.getString(1);
         t.hour = c.getInt(2);
         t.minute = c.getInt(3);
-        t.dayMask = c.getInt(4);
-        t.active = c.getInt(5) == 1;
+        t.endHour = c.getInt(4);
+        t.endMinute = c.getInt(5);
+        t.dayMask = c.getInt(6);
+        t.active = c.getInt(7) == 1;
         return t;
     }
 
@@ -153,9 +168,9 @@ public class DbHelper extends SQLiteOpenHelper {
             int dow = calendarDay(date);
             String ds = date.toString();
             try (Cursor c = db.rawQuery(
-                    "SELECT id,title,hour,minute,day_mask FROM tasks WHERE active=1", null)) {
+                    "SELECT id,title,hour,minute,end_hour,end_minute,day_mask FROM tasks WHERE active=1", null)) {
                 while (c.moveToNext()) {
-                    int mask = c.getInt(4);
+                    int mask = c.getInt(6);
                     if ((mask & (1 << dow)) == 0) continue;
                     ContentValues v = new ContentValues();
                     v.put("task_id", c.getLong(0));
@@ -163,6 +178,8 @@ public class DbHelper extends SQLiteOpenHelper {
                     v.put("title_snapshot", c.getString(1));
                     v.put("hour", c.getInt(2));
                     v.put("minute", c.getInt(3));
+                    v.put("end_hour", c.getInt(4));
+                    v.put("end_minute", c.getInt(5));
                     db.insertWithOnConflict("day_tasks", null, v, SQLiteDatabase.CONFLICT_IGNORE);
                 }
             }
@@ -185,12 +202,16 @@ public class DbHelper extends SQLiteOpenHelper {
         v.put("title_snapshot", t.title);
         v.put("hour", t.hour);
         v.put("minute", t.minute);
+        v.put("end_hour", t.endHour);
+        v.put("end_minute", t.endMinute);
         long row = getWritableDatabase().insertWithOnConflict("day_tasks", null, v, SQLiteDatabase.CONFLICT_IGNORE);
         if (row == -1) {
             ContentValues update = new ContentValues();
             update.put("title_snapshot", t.title);
             update.put("hour", t.hour);
             update.put("minute", t.minute);
+            update.put("end_hour", t.endHour);
+            update.put("end_minute", t.endMinute);
             getWritableDatabase().update("day_tasks", update, "task_id=? AND date=?",
                     new String[]{String.valueOf(taskId), today.toString()});
         }
@@ -200,7 +221,7 @@ public class DbHelper extends SQLiteOpenHelper {
         ensureDay(date);
         List<DayTask> result = new ArrayList<>();
         try (Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,task_id,date,title_snapshot,hour,minute,completed FROM day_tasks WHERE date=? " +
+                "SELECT id,task_id,date,title_snapshot,hour,minute,end_hour,end_minute,completed FROM day_tasks WHERE date=? " +
                         "ORDER BY completed ASC,hour ASC,minute ASC,id ASC",
                 new String[]{date.toString()})) {
             while (c.moveToNext()) {
@@ -211,7 +232,9 @@ public class DbHelper extends SQLiteOpenHelper {
                 d.title = c.getString(3);
                 d.hour = c.getInt(4);
                 d.minute = c.getInt(5);
-                d.completed = c.getInt(6) == 1;
+                d.endHour = c.getInt(6);
+                d.endMinute = c.getInt(7);
+                d.completed = c.getInt(8) == 1;
                 result.add(d);
             }
         }
@@ -332,10 +355,10 @@ public class DbHelper extends SQLiteOpenHelper {
         String taskSql;
         String[] taskArgs;
         if (full) {
-            taskSql = "SELECT id,title,hour,minute,day_mask,active,created_at FROM tasks ORDER BY id";
+            taskSql = "SELECT id,title,hour,minute,end_hour,end_minute,day_mask,active,created_at FROM tasks ORDER BY id";
             taskArgs = null;
         } else {
-            taskSql = "SELECT DISTINCT t.id,t.title,t.hour,t.minute,t.day_mask,t.active,t.created_at " +
+            taskSql = "SELECT DISTINCT t.id,t.title,t.hour,t.minute,t.end_hour,t.end_minute,t.day_mask,t.active,t.created_at " +
                     "FROM tasks t JOIN day_tasks d ON d.task_id=t.id WHERE d.date BETWEEN ? AND ? ORDER BY t.id";
             taskArgs = new String[]{from.toString(), to.toString()};
         }
@@ -346,9 +369,11 @@ public class DbHelper extends SQLiteOpenHelper {
                 o.put("title", c.getString(1));
                 o.put("hour", c.getInt(2));
                 o.put("minute", c.getInt(3));
-                o.put("dayMask", c.getInt(4));
-                o.put("active", c.getInt(5));
-                o.put("createdAt", c.getLong(6));
+                o.put("endHour", c.getInt(4));
+                o.put("endMinute", c.getInt(5));
+                o.put("dayMask", c.getInt(6));
+                o.put("active", c.getInt(7));
+                o.put("createdAt", c.getLong(8));
                 tasks.put(o);
             }
         }
@@ -356,7 +381,7 @@ public class DbHelper extends SQLiteOpenHelper {
 
         JSONArray days = new JSONArray();
         String daySql = full
-                ? "SELECT task_id,date,title_snapshot,hour,minute,completed,completed_at FROM day_tasks ORDER BY date,task_id"
+                ? "SELECT task_id,date,title_snapshot,hour,minute,end_hour,end_minute,completed,completed_at FROM day_tasks ORDER BY date,task_id"
                 : "SELECT task_id,date,title_snapshot,hour,minute,completed,completed_at FROM day_tasks WHERE date BETWEEN ? AND ? ORDER BY date,task_id";
         String[] dayArgs = full ? null : new String[]{from.toString(), to.toString()};
         try (Cursor c = getReadableDatabase().rawQuery(daySql, dayArgs)) {
@@ -367,8 +392,10 @@ public class DbHelper extends SQLiteOpenHelper {
                 o.put("title", c.getString(2));
                 o.put("hour", c.getInt(3));
                 o.put("minute", c.getInt(4));
-                o.put("completed", c.getInt(5));
-                if (!c.isNull(6)) o.put("completedAt", c.getLong(6));
+                o.put("endHour", c.getInt(5));
+                o.put("endMinute", c.getInt(6));
+                o.put("completed", c.getInt(7));
+                if (!c.isNull(8)) o.put("completedAt", c.getLong(8));
                 days.put(o);
             }
         }
@@ -432,18 +459,23 @@ public class DbHelper extends SQLiteOpenHelper {
                     v.put("title", o.getString("title"));
                     v.put("hour", o.getInt("hour"));
                     v.put("minute", o.getInt("minute"));
+                    v.put("end_hour", o.optInt("endHour", -1));
+                    v.put("end_minute", o.optInt("endMinute", -1));
                     v.put("day_mask", o.getInt("dayMask"));
                     v.put("active", o.optInt("active", 1));
                     v.put("created_at", o.optLong("createdAt", System.currentTimeMillis()));
                     newId = db.insertWithOnConflict("tasks", null, v, SQLiteDatabase.CONFLICT_REPLACE);
                     if (newId == -1) newId = oldId;
                 } else {
-                    newId = findMatchingTask(db, o.getString("title"), o.getInt("hour"), o.getInt("minute"), o.getInt("dayMask"));
+                    newId = findMatchingTask(db, o.getString("title"), o.getInt("hour"), o.getInt("minute"),
+                            o.optInt("endHour", -1), o.optInt("endMinute", -1), o.getInt("dayMask"));
                     if (newId < 0) {
                         ContentValues v = new ContentValues();
                         v.put("title", o.getString("title"));
                         v.put("hour", o.getInt("hour"));
                         v.put("minute", o.getInt("minute"));
+                        v.put("end_hour", o.optInt("endHour", -1));
+                        v.put("end_minute", o.optInt("endMinute", -1));
                         v.put("day_mask", o.getInt("dayMask"));
                         v.put("active", 0);
                         v.put("created_at", o.optLong("createdAt", System.currentTimeMillis()));
@@ -464,6 +496,8 @@ public class DbHelper extends SQLiteOpenHelper {
                 v.put("title_snapshot", o.getString("title"));
                 v.put("hour", o.getInt("hour"));
                 v.put("minute", o.getInt("minute"));
+                v.put("end_hour", o.optInt("endHour", -1));
+                v.put("end_minute", o.optInt("endMinute", -1));
                 v.put("completed", o.optInt("completed", 0));
                 if (o.has("completedAt")) v.put("completed_at", o.optLong("completedAt"));
                 else v.putNull("completed_at");
@@ -496,10 +530,12 @@ public class DbHelper extends SQLiteOpenHelper {
         return type;
     }
 
-    private long findMatchingTask(SQLiteDatabase db, String title, int hour, int minute, int dayMask) {
+    private long findMatchingTask(SQLiteDatabase db, String title, int hour, int minute,
+                                  int endHour, int endMinute, int dayMask) {
         try (Cursor c = db.rawQuery(
-                "SELECT id FROM tasks WHERE title=? AND hour=? AND minute=? AND day_mask=? LIMIT 1",
-                new String[]{title, String.valueOf(hour), String.valueOf(minute), String.valueOf(dayMask)})) {
+                "SELECT id FROM tasks WHERE title=? AND hour=? AND minute=? AND end_hour=? AND end_minute=? AND day_mask=? LIMIT 1",
+                new String[]{title, String.valueOf(hour), String.valueOf(minute),
+                        String.valueOf(endHour), String.valueOf(endMinute), String.valueOf(dayMask)})) {
             if (c.moveToFirst()) return c.getLong(0);
         }
         return -1;
