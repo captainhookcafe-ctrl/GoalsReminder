@@ -6,7 +6,9 @@
 
     <application
         android:allowBackup="false"
-        android:label="یادآور اهداف"
+        android:label="Goals Reminder"
+        android:icon="@drawable/app_icon"
+        android:roundIcon="@drawable/app_icon"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
