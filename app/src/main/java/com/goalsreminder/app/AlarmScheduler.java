@@ -8,24 +8,30 @@ import android.os.Build;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
 public final class AlarmScheduler {
     private AlarmScheduler() {}
 
-    private static PendingIntent taskIntent(Context context, long taskId, int flags) {
+    private static PendingIntent taskIntent(Context context, long taskId, String kind, int flags) {
         Intent intent = new Intent(context, ReminderReceiver.class);
         intent.putExtra("task_id", taskId);
-        return PendingIntent.getBroadcast(context, (int)(taskId & 0x7fffffff), intent, flags | PendingIntent.FLAG_IMMUTABLE);
+        intent.putExtra("kind", kind);
+        long raw = taskId * 2L + ("end".equals(kind) ? 1L : 0L);
+        int requestCode = (int)(raw & 0x7fffffff);
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags | PendingIntent.FLAG_IMMUTABLE);
     }
 
     public static void cancelTask(Context context, long taskId) {
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        PendingIntent pi = taskIntent(context, taskId, PendingIntent.FLAG_NO_CREATE);
-        if (pi != null) {
-            am.cancel(pi);
-            pi.cancel();
+        for (String kind : new String[]{"start", "end"}) {
+            PendingIntent pi = taskIntent(context, taskId, kind, PendingIntent.FLAG_NO_CREATE);
+            if (pi != null) {
+                am.cancel(pi);
+                pi.cancel();
+            }
         }
     }
 
@@ -36,21 +42,36 @@ public final class AlarmScheduler {
         if (task == null || !task.active) return;
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime next = null;
         for (int add = 0; add <= 8; add++) {
             LocalDate date = now.toLocalDate().plusDays(add);
             if (!DbHelper.scheduledOn(task, date)) continue;
-            LocalDateTime candidate = date.atTime(task.hour, task.minute);
-            if (!candidate.isAfter(now)) continue;
             if (add == 0 && db.isCompleted(task.id, date)) continue;
-            next = candidate;
-            break;
-        }
-        if (next == null) return;
 
-        long trigger = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            LocalDateTime start = date.atTime(task.hour, task.minute);
+            LocalTime endTime = effectiveEnd(task);
+            LocalDateTime end = date.atTime(endTime);
+
+            if (!end.isAfter(start)) continue;
+            if (!end.isAfter(now)) continue;
+
+            if (start.isAfter(now)) scheduleOne(context, task.id, "start", start);
+            scheduleOne(context, task.id, "end", end);
+            return;
+        }
+    }
+
+    private static LocalTime effectiveEnd(TaskItem task) {
+        if (task.endHour >= 0 && task.endMinute >= 0) {
+            return LocalTime.of(task.endHour, task.endMinute);
+        }
+        int total = Math.min(1439, task.hour * 60 + task.minute + 30);
+        return LocalTime.of(total / 60, total % 60);
+    }
+
+    private static void scheduleOne(Context context, long taskId, String kind, LocalDateTime time) {
+        long trigger = time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        PendingIntent pi = taskIntent(context, taskId, PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pi = taskIntent(context, taskId, kind, PendingIntent.FLAG_UPDATE_CURRENT);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pi);
