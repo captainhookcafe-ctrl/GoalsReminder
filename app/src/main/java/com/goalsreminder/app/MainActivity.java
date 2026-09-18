@@ -477,30 +477,126 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void taskDialog(TaskItem old){
-        LinearLayout f=new LinearLayout(this); f.setOrientation(LinearLayout.VERTICAL); f.setPadding(dp(18),dp(8),dp(18),0);
-        EditText name=input("عنوان کار"); if(old!=null)name.setText(old.title); f.addView(name);
-        final int[] tm={old==null?8:old.hour,old==null?0:old.minute};
-        Button time=action(timeText(tm[0],tm[1])); time.setOnClickListener(v->new TimePickerDialog(this,(x,h,m)->{tm[0]=h;tm[1]=m;time.setText(timeText(h,m));},tm[0],tm[1],true).show()); f.addView(time);
+        LinearLayout f=new LinearLayout(this);
+        f.setOrientation(LinearLayout.VERTICAL);
+        f.setPadding(dp(18),dp(8),dp(18),0);
+        f.setLayoutDirection(en()?View.LAYOUT_DIRECTION_LTR:View.LAYOUT_DIRECTION_RTL);
 
-        String[] labels={"ش","ی","د","س","چ","پ","ج"}; int[] cal={7,1,2,3,4,5,6};
-        LinearLayout days=new LinearLayout(this); days.setOrientation(LinearLayout.HORIZONTAL); days.setGravity(Gravity.CENTER); final boolean[] sel=new boolean[7];
-        for(int i=0;i<7;i++){final int k=i; Button b=compact(labels[i]); boolean on=old!=null&&(old.dayMask&(1<<cal[i]))!=0; sel[i]=on; markDay(b,on);
-            b.setOnClickListener(v->{sel[k]=!sel[k];markDay(b,sel[k]);}); days.addView(b,new LinearLayout.LayoutParams(0,dp(48),1));} f.addView(days);
+        EditText name=input(tr("عنوان کار","Task title"));
+        if(old!=null)name.setText(old.title);
+        f.addView(name);
 
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(old==null?"کار جدید":"ویرایش کار").setView(f)
-                .setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null)
-                .setNeutralButton(old==null?null:"حذف",null).create();
+        int oldEnd=old==null?510:old.endMinutes();
+        final int[] tm={
+                old==null?8:old.hour,
+                old==null?0:old.minute,
+                oldEnd/60,
+                oldEnd%60
+        };
+
+        Button startBtn=action(tr("شروع: ","Start: ")+timeText(tm[0],tm[1]));
+        Button endBtn=action(tr("پایان: ","End: ")+timeText(tm[2],tm[3]));
+
+        startBtn.setOnClickListener(v->new TimePickerDialog(this,(x,h,m)->{
+            tm[0]=h;tm[1]=m;
+            if(tm[2]*60+tm[3]<=tm[0]*60+tm[1]){
+                int end=Math.min(1439,tm[0]*60+tm[1]+30);
+                tm[2]=end/60;tm[3]=end%60;
+            }
+            startBtn.setText(tr("شروع: ","Start: ")+timeText(tm[0],tm[1]));
+            endBtn.setText(tr("پایان: ","End: ")+timeText(tm[2],tm[3]));
+        },tm[0],tm[1],true).show());
+
+        endBtn.setOnClickListener(v->new TimePickerDialog(this,(x,h,m)->{
+            tm[2]=h;tm[3]=m;
+            endBtn.setText(tr("پایان: ","End: ")+timeText(tm[2],tm[3]));
+        },tm[2],tm[3],true).show());
+
+        f.addView(startBtn);
+        f.addView(endBtn);
+
+        TextView help=small(tr(
+                "نوار زمان از ساعت شروع تا پایان پر می‌شود و در ابتدا و انتهای بازه آلارم می‌گیری.",
+                "The time bar fills from start to end, with an alarm at both boundaries."));
+        help.setPadding(0,dp(4),0,dp(8));
+        f.addView(help);
+
+        String[] labels=en()
+                ?new String[]{"Sa","Su","Mo","Tu","We","Th","Fr"}
+                :new String[]{"ش","ی","د","س","چ","پ","ج"};
+        int[] cal={7,1,2,3,4,5,6};
+        LinearLayout days=new LinearLayout(this);
+        days.setOrientation(LinearLayout.HORIZONTAL);
+        days.setGravity(Gravity.CENTER);
+        final boolean[] sel=new boolean[7];
+
+        for(int i=0;i<7;i++){
+            final int k=i;
+            Button b=compact(labels[i]);
+            boolean on=old!=null&&(old.dayMask&(1<<cal[i]))!=0;
+            sel[i]=on;
+            markDay(b,on);
+            b.setOnClickListener(v->{sel[k]=!sel[k];markDay(b,sel[k]);});
+            days.addView(b,new LinearLayout.LayoutParams(0,dp(48),1));
+        }
+        f.addView(days);
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle(old==null?tr("کار جدید","New Task"):tr("ویرایش کار","Edit Task"))
+                .setView(f)
+                .setPositiveButton(tr("ذخیره","Save"),null)
+                .setNegativeButton(tr("انصراف","Cancel"),null)
+                .setNeutralButton(old==null?null:tr("حذف","Delete"),null)
+                .create();
+
         dialog.setOnShowListener(x->{
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-                String s=name.getText().toString().trim(); if(s.isEmpty()){name.setError("عنوان را وارد کن");return;}
-                int mask=0; for(int i=0;i<7;i++)if(sel[i])mask|=1<<cal[i];
-                if(mask==0){Toast.makeText(this,"حداقل یک روز را انتخاب کن",Toast.LENGTH_SHORT).show();return;}
-                if(old==null){long id=db.addTask(s,tm[0],tm[1],mask);AlarmScheduler.scheduleTask(this,id);}
-                else{db.updateTask(old.id,s,tm[0],tm[1],mask);AlarmScheduler.cancelTask(this,old.id);AlarmScheduler.scheduleTask(this,old.id);}
-                dialog.dismiss(); showToday();
+                String titleText=name.getText().toString().trim();
+                if(titleText.isEmpty()){
+                    name.setError(tr("عنوان را وارد کن","Enter a title"));
+                    return;
+                }
+
+                int startMinutes=tm[0]*60+tm[1];
+                int endMinutes=tm[2]*60+tm[3];
+                if(endMinutes<=startMinutes){
+                    Toast.makeText(this,tr(
+                            "ساعت پایان باید بعد از ساعت شروع باشد.",
+                            "End time must be after start time."),
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                int mask=0;
+                for(int i=0;i<7;i++)if(sel[i])mask|=1<<cal[i];
+                if(mask==0){
+                    Toast.makeText(this,tr(
+                            "حداقل یک روز را انتخاب کن",
+                            "Select at least one day"),
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                if(old==null){
+                    long id=db.addTask(titleText,tm[0],tm[1],tm[2],tm[3],mask);
+                    AlarmScheduler.scheduleTask(this,id);
+                }else{
+                    db.updateTask(old.id,titleText,tm[0],tm[1],tm[2],tm[3],mask);
+                    AlarmScheduler.cancelTask(this,old.id);
+                    AlarmScheduler.scheduleTask(this,old.id);
+                }
+                dialog.dismiss();
+                showToday();
             });
-            if(old!=null) dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{AlarmScheduler.cancelTask(this,old.id);db.deleteTask(old.id);dialog.dismiss();showToday();});
-        }); dialog.show();
+
+            if(old!=null)dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{
+                AlarmScheduler.cancelTask(this,old.id);
+                db.deleteTask(old.id);
+                dialog.dismiss();
+                showToday();
+            });
+        });
+        dialog.show();
     }
 
     private void markDay(Button b,boolean on){b.setTextColor(on?Color.rgb(10,20,31):TEXT); GradientDrawable g=new GradientDrawable();g.setColor(on?ACCENT:SURFACE2);g.setCornerRadius(dp(10));b.setBackground(g);}
