@@ -710,31 +710,108 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void showAnalysisWeek(){
-        LocalDate now=LocalDate.now(); LocalDate from=now.with(TemporalAdjusters.previousOrSame(DayOfWeek.SATURDAY)); showAnalysis(from,now,"این هفته");
+        LocalDate now=LocalDate.now();
+        LocalDate from=now.with(TemporalAdjusters.previousOrSame(DayOfWeek.SATURDAY));
+        showAnalysis(from,now,tr("این هفته","This Week"));
     }
 
     private void showAnalysis(LocalDate from,LocalDate to,String mode){
-        screen=2; host.removeAllViews(); ScrollView sv=new ScrollView(this); LinearLayout p=page(); p.addView(title("آنالیز"));
-        LinearLayout controls=new LinearLayout(this); controls.setOrientation(LinearLayout.HORIZONTAL);
-        Button w=compact("این هفته"),m=compact("این ماه"),c=compact("بازه دلخواه");
-        controls.addView(w,new LinearLayout.LayoutParams(0,dp(52),1));controls.addView(m,new LinearLayout.LayoutParams(0,dp(52),1));controls.addView(c,new LinearLayout.LayoutParams(0,dp(52),1));p.addView(controls);
-        w.setOnClickListener(v->showAnalysisWeek()); m.setOnClickListener(v->{int[] j=PersianDate.fromGregorian(LocalDate.now());showAnalysis(PersianDate.toGregorian(j[0],j[1],1),LocalDate.now(),"این ماه");}); c.setOnClickListener(v->customRange());
-        TextView r=small(mode+" · "+PersianDate.format(from)+" تا "+PersianDate.format(to));r.setTextColor(ACCENT);r.setPadding(0,dp(12),0,dp(14));p.addView(r);
-        int[] total=db.analyzeTotal(from,to);int pct=total[0]==0?0:Math.round(total[1]*100f/total[0]);
-        TextView big=title(PersianDate.toPersianDigits(pct+"%"));big.setTextSize(44);big.setGravity(Gravity.CENTER);p.addView(big);
-        TextView sub=small(PersianDate.toPersianDigits(total[1]+" انجام‌شده از "+total[0]+" کار"));sub.setGravity(Gravity.CENTER);p.addView(sub);
-        for(DbHelper.AnalysisRow ar:db.analyze(from,to)){LinearLayout box=card();box.setOrientation(LinearLayout.VERTICAL);int rate=(int)Math.round(ar.rate());
-            TextView t=small(ar.title+"     "+PersianDate.toPersianDigits(rate+"%"));t.setTextColor(TEXT);t.setTextSize(15);box.addView(t);
-            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);bar.setProgress(rate);bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));box.addView(bar,new LinearLayout.LayoutParams(-1,dp(12)));
-            box.addView(small(PersianDate.toPersianDigits(ar.completed+" از "+ar.planned+" بار")));p.addView(box);}
-        sv.addView(p);host.addView(sv);
+        screen=2;
+        clockHandler.removeCallbacks(taskTicker);
+        host.removeAllViews();
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+        p.addView(title(tr("آنالیز","Analytics")));
+
+        LinearLayout controls=new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        Button w=compact(tr("این هفته","This Week"));
+        Button m=compact(tr("این ماه","This Month"));
+        Button custom=compact(tr("بازه دلخواه","Custom"));
+
+        controls.addView(w,new LinearLayout.LayoutParams(0,dp(52),1));
+        controls.addView(m,new LinearLayout.LayoutParams(0,dp(52),1));
+        controls.addView(custom,new LinearLayout.LayoutParams(0,dp(52),1));
+        p.addView(controls);
+
+        w.setOnClickListener(v->showAnalysisWeek());
+        m.setOnClickListener(v->{
+            LocalDate now=LocalDate.now();
+            LocalDate first;
+            if(en()){
+                first=now.withDayOfMonth(1);
+            }else{
+                int[] j=PersianDate.fromGregorian(now);
+                first=PersianDate.toGregorian(j[0],j[1],1);
+            }
+            showAnalysis(first,now,tr("این ماه","This Month"));
+        });
+        custom.setOnClickListener(v->customRange());
+
+        TextView range=small(mode+" · "+localizedDate(from,false)+" "+
+                tr("تا","to")+" "+localizedDate(to,false));
+        range.setTextColor(ACCENT);
+        range.setPadding(0,dp(12),0,dp(14));
+        p.addView(range);
+
+        int[] total=db.analyzeTotal(from,to);
+        int pct=total[0]==0?0:Math.round(total[1]*100f/total[0]);
+
+        TextView big=title(localNumber(pct+"%"));
+        big.setTextSize(44);
+        big.setGravity(Gravity.CENTER);
+        p.addView(big);
+
+        TextView sub=small(en()
+                ?total[1]+" completed of "+total[0]+" scheduled tasks"
+                :PersianDate.toPersianDigits(total[1]+" انجام‌شده از "+total[0]+" کار"));
+        sub.setGravity(Gravity.CENTER);
+        p.addView(sub);
+
+        for(DbHelper.AnalysisRow ar:db.analyze(from,to)){
+            LinearLayout box=card();
+            int rate=(int)Math.round(ar.rate());
+
+            TextView t=small(ar.title+"     "+localNumber(rate+"%"));
+            t.setTextColor(TEXT);
+            t.setTextSize(15);
+            box.addView(t);
+
+            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(100);
+            bar.setProgress(rate);
+            bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+            box.addView(bar,new LinearLayout.LayoutParams(-1,dp(12)));
+
+            box.addView(small(en()
+                    ?ar.completed+" of "+ar.planned
+                    :PersianDate.toPersianDigits(ar.completed+" از "+ar.planned+" بار")));
+            p.addView(box);
+        }
+
+        sv.addView(p);
+        host.addView(sv);
     }
 
     private void customRange(){
-        LocalDate now=LocalDate.now(); final LocalDate[] x={now.minusDays(7),now};
-        DatePickerDialog a=new DatePickerDialog(this,(v,y,m,d)->{x[0]=LocalDate.of(y,m+1,d);
-            DatePickerDialog z=new DatePickerDialog(this,(v2,y2,m2,d2)->{x[1]=LocalDate.of(y2,m2+1,d2);if(x[1].isBefore(x[0])){Toast.makeText(this,"تاریخ پایان قبل از شروع است",Toast.LENGTH_SHORT).show();return;}showAnalysis(x[0],x[1],"بازه دلخواه");},x[1].getYear(),x[1].getMonthValue()-1,x[1].getDayOfMonth());z.show();
-        },x[0].getYear(),x[0].getMonthValue()-1,x[0].getDayOfMonth());a.show();
+        LocalDate now=LocalDate.now();
+        final LocalDate[] x={now.minusDays(7),now};
+        DatePickerDialog a=new DatePickerDialog(this,(v,y,m,d)->{
+            x[0]=LocalDate.of(y,m+1,d);
+            DatePickerDialog z=new DatePickerDialog(this,(v2,y2,m2,d2)->{
+                x[1]=LocalDate.of(y2,m2+1,d2);
+                if(x[1].isBefore(x[0])){
+                    Toast.makeText(this,tr(
+                            "تاریخ پایان قبل از شروع است",
+                            "End date is before start date"),
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                showAnalysis(x[0],x[1],tr("بازه دلخواه","Custom"));
+            },x[1].getYear(),x[1].getMonthValue()-1,x[1].getDayOfMonth());
+            z.show();
+        },x[0].getYear(),x[0].getMonthValue()-1,x[0].getDayOfMonth());
+        a.show();
     }
 
 
