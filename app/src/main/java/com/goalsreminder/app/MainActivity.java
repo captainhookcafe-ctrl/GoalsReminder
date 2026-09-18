@@ -283,44 +283,197 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void showToday(){
-        screen=0; host.removeAllViews(); ScrollView sv=new ScrollView(this); LinearLayout p=page();
-        LocalDate today=LocalDate.now(); db.ensureDay(today);
-        p.addView(title("امروز")); TextView d=small(PersianDate.formatWithWeekday(today)); d.setTextColor(ACCENT); p.addView(d);
+        screen=0;
+        clockHandler.removeCallbacks(taskTicker);
+        taskUis.clear();
+        host.removeAllViews();
+
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+        LocalDate today=LocalDate.now();
+        db.ensureDay(today);
+
+        p.addView(title(tr("امروز","Today")));
+        TextView d=small(localizedDate(today,true));
+        d.setTextColor(ACCENT);
+        p.addView(d);
 
         if(!canExact()){
-            TextView w=small("برای نوتیفیکیشن دقیق، دسترسی هشدار دقیق را فعال کن."); w.setTextColor(Color.rgb(255,194,102)); w.setPadding(0,dp(10),0,0); p.addView(w);
-            Button g=action("فعال‌کردن هشدار دقیق"); g.setOnClickListener(v->openExact()); p.addView(g);
+            TextView w=small(tr(
+                    "برای نوتیفیکیشن دقیق، دسترسی هشدار دقیق را فعال کن.",
+                    "Enable exact alarms for precise start and end reminders."));
+            w.setTextColor(Color.rgb(255,194,102));
+            w.setPadding(0,dp(10),0,0);
+            p.addView(w);
+            Button g=action(tr("فعال‌کردن هشدار دقیق","Enable Exact Alarms"));
+            g.setOnClickListener(v->openExact());
+            p.addView(g);
         }
 
-        p.addView(section("کارهای امروز"));
+        p.addView(section(tr("کارهای امروز","Today's Tasks")));
         List<DayTask> tasks=db.getDayTasks(today);
-        if(tasks.isEmpty()) p.addView(small("برای امروز کاری برنامه‌ریزی نشده."));
-        for(DayTask t:tasks) p.addView(taskRow(t));
+        LocalDateTime now=LocalDateTime.now();
+        tasks.sort((a,b)->{
+            int pa=taskPriority(a,now), pb=taskPriority(b,now);
+            if(pa!=pb)return Integer.compare(pa,pb);
+            return Integer.compare(a.startMinutes(),b.startMinutes());
+        });
 
-        Button add=action("＋ کار جدید"); add.setOnClickListener(v->taskDialog(null)); p.addView(add);
-        p.addView(section("یادداشت روزانه"));
+        if(tasks.isEmpty())p.addView(small(tr(
+                "برای امروز کاری برنامه‌ریزی نشده.",
+                "No tasks are scheduled for today.")));
+
+        for(DayTask t:tasks)p.addView(taskRow(t));
+
+        Button add=action(tr("＋ کار جدید","＋ New Task"));
+        add.setOnClickListener(v->taskDialog(null));
+        p.addView(add);
+
+        p.addView(section(tr("یادداشت روزانه","Daily Journal")));
         int period=LocalTime.now().getHour()<12?0:1;
-        TextView pl=small(period==0?"نیمه اول روز · ۰۰:۰۰ تا ۱۲:۰۰":"نیمه دوم روز · ۱۲:۰۰ تا ۲۴:۰۰"); pl.setTextColor(ACCENT); p.addView(pl);
+        TextView pl=small(period==0
+                ?tr("نیمه اول روز · ۰۰:۰۰ تا ۱۲:۰۰","First half · 00:00–12:00")
+                :tr("نیمه دوم روز · ۱۲:۰۰ تا ۲۴:۰۰","Second half · 12:00–24:00"));
+        pl.setTextColor(ACCENT);
+        p.addView(pl);
         notesEditor(p,today,period);
 
+        sv.addView(p);
+        host.addView(sv);
 
-        sv.addView(p); host.addView(sv);
+        for(TaskUi ui:taskUis)updateTaskUi(ui,now);
+        if(!taskUis.isEmpty())clockHandler.postDelayed(taskTicker,5000);
+    }
+
+    private int taskPriority(DayTask t,LocalDateTime now){
+        if(t.completed)return 3;
+        LocalDate date=LocalDate.parse(t.date);
+        LocalDateTime start=date.atTime(t.hour,t.minute);
+        int endMin=t.endMinutes();
+        LocalDateTime end=date.atTime(endMin/60,endMin%60);
+        if(now.isBefore(start))return 1;
+        if(now.isBefore(end))return 0;
+        return 2;
     }
 
     private View taskRow(DayTask t){
-        LinearLayout row=card(); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-        CheckBox c=new CheckBox(this); c.setChecked(t.completed); c.setButtonTintList(new android.content.res.ColorStateList(
-                new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{GOOD,MUTED}));
-        row.addView(c,new LinearLayout.LayoutParams(dp(52),dp(56)));
-        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(4),dp(8),dp(8),dp(8));
-        TextView name=new TextView(this); name.setText(t.title); name.setTextColor(t.completed?MUTED:TEXT); name.setTextSize(16); name.setGravity(Gravity.RIGHT);
-        if(t.completed) name.setPaintFlags(name.getPaintFlags()|Paint.STRIKE_THRU_TEXT_FLAG);
+        LinearLayout row=card();
+        row.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout top=new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setLayoutDirection(en()?View.LAYOUT_DIRECTION_LTR:View.LAYOUT_DIRECTION_RTL);
+
+        CheckBox cbox=new CheckBox(this);
+        cbox.setChecked(t.completed);
+        cbox.setButtonTintList(new android.content.res.ColorStateList(
+                new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},
+                new int[]{GOOD,MUTED}));
+        top.addView(cbox,new LinearLayout.LayoutParams(dp(52),dp(56)));
+
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(7),dp(7),dp(7),dp(7));
+
+        TextView name=new TextView(this);
+        name.setText(t.title);
+        name.setTextColor(t.completed?MUTED:TEXT);
+        name.setTextSize(16);
+        name.setGravity(en()?Gravity.LEFT:Gravity.RIGHT);
+        if(t.completed)name.setPaintFlags(name.getPaintFlags()|Paint.STRIKE_THRU_TEXT_FLAG);
+
         TaskItem ti=db.getTask(t.taskId);
-        TextView meta=small(PersianDate.toPersianDigits(String.format(Locale.US,"%02d:%02d",t.hour,t.minute))+" · "+repeatText(ti));
-        box.addView(name); box.addView(meta); row.addView(box,new LinearLayout.LayoutParams(0,-2,1));
-        c.setOnClickListener(v->{db.setCompleted(t.taskId,LocalDate.now(),c.isChecked()); AlarmScheduler.cancelTask(this,t.taskId); AlarmScheduler.scheduleTask(this,t.taskId); showToday();});
-        box.setOnClickListener(v->{TaskItem x=db.getTask(t.taskId); if(x!=null)taskDialog(x);});
+        int endMin=t.endMinutes();
+        TextView meta=small(timeText(t.hour,t.minute)+" – "+timeText(endMin/60,endMin%60)+" · "+repeatText(ti));
+        meta.setGravity(en()?Gravity.LEFT:Gravity.RIGHT);
+
+        box.addView(name);
+        box.addView(meta);
+        top.addView(box,new LinearLayout.LayoutParams(0,-2,1));
+        row.addView(top);
+
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(1000);
+        bar.setProgress(0);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(50,58,78)));
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(8));
+        bp.setMargins(dp(8),dp(3),dp(8),dp(4));
+        row.addView(bar,bp);
+
+        TextView status=small("");
+        status.setPadding(dp(8),0,dp(8),dp(4));
+        row.addView(status);
+
+        TaskUi ui=new TaskUi();
+        ui.task=t;
+        ui.row=row;
+        ui.bar=bar;
+        ui.status=status;
+        taskUis.add(ui);
+
+        cbox.setOnClickListener(v->{
+            db.setCompleted(t.taskId,LocalDate.now(),cbox.isChecked());
+            AlarmScheduler.cancelTask(this,t.taskId);
+            AlarmScheduler.scheduleTask(this,t.taskId);
+            showToday();
+        });
+        box.setOnClickListener(v->{
+            TaskItem x=db.getTask(t.taskId);
+            if(x!=null)taskDialog(x);
+        });
         return row;
+    }
+
+    private void updateTaskUi(TaskUi ui,LocalDateTime now){
+        DayTask t=ui.task;
+        if(t.completed){
+            ui.state=3;
+            ui.bar.setVisibility(View.GONE);
+            ui.status.setText(tr("انجام شد","Completed"));
+            ui.status.setTextColor(GOOD);
+            ui.row.setBackground(glassDrawable(175,18));
+            return;
+        }
+
+        LocalDate date=LocalDate.parse(t.date);
+        LocalDateTime start=date.atTime(t.hour,t.minute);
+        int endMin=t.endMinutes();
+        LocalDateTime end=date.atTime(endMin/60,endMin%60);
+
+        if(now.isBefore(start)){
+            ui.state=1;
+            ui.bar.setVisibility(View.GONE);
+            ui.status.setText(tr("شروع در ","Starts at ")+timeText(t.hour,t.minute));
+            ui.status.setTextColor(MUTED);
+            ui.row.setBackground(glassDrawable(190,18));
+            return;
+        }
+
+        ui.bar.setVisibility(View.VISIBLE);
+        if(now.isBefore(end)){
+            ui.state=0;
+            long total=Math.max(1,Duration.between(start,end).toMillis());
+            long elapsed=Math.max(0,Duration.between(start,now).toMillis());
+            int progress=(int)Math.min(1000,(elapsed*1000L)/total);
+            ui.bar.setProgress(progress);
+            ui.bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+
+            long sec=Math.max(0,Duration.between(now,end).getSeconds());
+            long min=(sec+59)/60;
+            ui.status.setText(tr("در حال انجام · ","In progress · ")+localNumber(String.valueOf(min))+
+                    tr(" دقیقه مانده"," min left"));
+            ui.status.setTextColor(Color.rgb(114,190,255));
+            ui.row.setBackground(activeTaskDrawable());
+        }else{
+            ui.state=2;
+            ui.bar.setProgress(1000);
+            ui.bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.rgb(255,82,99)));
+            ui.status.setText(tr("زمان تمام شده · انجام نشده","Time is up · Not completed"));
+            ui.status.setTextColor(Color.rgb(255,111,124));
+            ui.row.setBackground(overdueTaskDrawable());
+        }
     }
 
     private void taskDialog(TaskItem old){
