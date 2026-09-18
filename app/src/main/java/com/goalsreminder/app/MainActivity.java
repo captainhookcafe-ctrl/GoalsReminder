@@ -638,24 +638,75 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void showHistory(){
-        screen=1; host.removeAllViews(); ScrollView sv=new ScrollView(this); LinearLayout p=page(); p.addView(title("تاریخچه"));
+        screen=1;
+        clockHandler.removeCallbacks(taskTicker);
+        host.removeAllViews();
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+        p.addView(title(tr("تاریخچه","History")));
+
         List<String> dates=db.getHistoryDates();
-        if(dates.isEmpty())p.addView(small("هنوز تاریخچه‌ای ثبت نشده."));
-        for(String ds:dates){ LocalDate date=LocalDate.parse(ds); int[] c=db.getDayCounts(ds);
-            Button b=compact(PersianDate.format(date)+"     "+PersianDate.toPersianDigits(c[1]+" از "+c[0])); b.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(58));lp.setMargins(0,dp(5),0,dp(5));p.addView(b,lp); b.setOnClickListener(v->historyDay(date));
+        if(dates.isEmpty())p.addView(small(tr(
+                "هنوز تاریخچه‌ای ثبت نشده.",
+                "No history has been recorded yet.")));
+
+        for(String ds:dates){
+            LocalDate date=LocalDate.parse(ds);
+            int[] counts=db.getDayCounts(ds);
+            String ratio=en()
+                    ?counts[1]+" of "+counts[0]
+                    :PersianDate.toPersianDigits(counts[1]+" از "+counts[0]);
+            Button b=compact(localizedDate(date,false)+"     "+ratio);
+            b.setGravity(en()?Gravity.LEFT|Gravity.CENTER_VERTICAL:Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(58));
+            lp.setMargins(0,dp(5),0,dp(5));
+            p.addView(b,lp);
+            b.setOnClickListener(v->historyDay(date));
         }
-        sv.addView(p);host.addView(sv);
+        sv.addView(p);
+        host.addView(sv);
     }
 
     private void historyDay(LocalDate date){
-        host.removeAllViews(); ScrollView sv=new ScrollView(this); LinearLayout p=page();
-        Button back=compact("→ بازگشت"); back.setOnClickListener(v->showHistory()); p.addView(back,new LinearLayout.LayoutParams(-1,dp(48)));
-        p.addView(title(PersianDate.formatWithWeekday(date))); p.addView(section("کارها"));
-        for(DayTask t:db.getDayTasks(date)){TextView x=small((t.completed?"✓ ":"○ ")+t.title+" · "+timeText(t.hour,t.minute));x.setTextColor(t.completed?GOOD:TEXT);x.setTextSize(15);x.setPadding(0,dp(7),0,dp(7));p.addView(x);}
-        for(int period=0;period<2;period++){NoteRecord n=db.getNote(date,period);if(!n.hasText())continue;p.addView(section(period==0?"یادداشت نیمه اول":"یادداشت نیمه دوم"));
-            for(String s:n.values)if(s!=null&&!s.trim().isEmpty()){TextView x=small("• "+s);x.setTextColor(TEXT);x.setPadding(0,dp(5),0,dp(5));p.addView(x);}}
-        sv.addView(p);host.addView(sv);
+        host.removeAllViews();
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+
+        Button back=compact(en()?"← Back":"→ بازگشت");
+        back.setOnClickListener(v->showHistory());
+        p.addView(back,new LinearLayout.LayoutParams(-1,dp(48)));
+
+        p.addView(title(localizedDate(date,true)));
+        p.addView(section(tr("کارها","Tasks")));
+
+        for(DayTask t:db.getDayTasks(date)){
+            int endMin=t.endMinutes();
+            String line=(t.completed?"✓ ":"○ ")+t.title+" · "+
+                    timeText(t.hour,t.minute)+" – "+timeText(endMin/60,endMin%60);
+            TextView x=small(line);
+            x.setTextColor(t.completed?GOOD:TEXT);
+            x.setTextSize(15);
+            x.setPadding(0,dp(7),0,dp(7));
+            p.addView(x);
+        }
+
+        for(int period=0;period<2;period++){
+            NoteRecord n=db.getNote(date,period);
+            if(!n.hasText())continue;
+            p.addView(section(period==0
+                    ?tr("یادداشت نیمه اول","First-half Notes")
+                    :tr("یادداشت نیمه دوم","Second-half Notes")));
+            for(String value:n.values){
+                if(value!=null&&!value.trim().isEmpty()){
+                    TextView x=small("• "+value);
+                    x.setTextColor(TEXT);
+                    x.setPadding(0,dp(5),0,dp(5));
+                    p.addView(x);
+                }
+            }
+        }
+        sv.addView(p);
+        host.addView(sv);
     }
 
     private void showAnalysisWeek(){
