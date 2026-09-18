@@ -136,7 +136,7 @@ public class MainActivity extends android.app.Activity {
         top.setGravity(Gravity.CENTER_VERTICAL);
 
         ImageView logo=new ImageView(this);
-        logo.setImageResource(R.drawable.logo_mark_white);
+        logo.setImageBitmap(LogoAsset.bitmap());
         logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         top.addView(logo,new LinearLayout.LayoutParams(dp(58),dp(44)));
 
