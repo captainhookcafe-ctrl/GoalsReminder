@@ -1,0 +1,17 @@
+package com.goalsreminder.app;
+
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Base64;
+
+public final class LogoAsset {
+    private LogoAsset() {}
+
+    private static final String PNG_BASE64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAPAAAACUCAYAAACtMKTeAAADSUlEQVR42u3dy3LDNhBFQdPl//9leOuyKAkUCWJm0L3Pw7LAg8ukkq211r6AV7aof2PffjeQ18+fp4sSw74WtcwKDMkL/OxposjQX+YpNVZgKFLgd/d7RYb+nXxLkRUYihZYkeF8kYeWWIEhsTMHePsK/G+oQKASt4gHGEi0gW1jCLaJFRgWL7Aiw6QSKzAkdscB9rYa9kvcMhxgINEGto3hpk08s8Cu1eAKDa7QUSrsWo2rtAKDAisy2MDAKgVWZGzhA1tYgcEV+tYi++fHoMBgA9vGoMDASgVWZKrrehutwOAKHbLI3lbjAAM2sG0MCgysVGBFRoEBBzhqkb2txgEGbGDbGBQYFFiRFRkFBhzg+UX2thoHGLCBo2xjYlrmnYUCgwKXfSIrLgoMKPCMrfPuz6/QKDCwRoFb8L8fReYq/t9IoMDKq8huaA7wor+I5iAzkis0KLDyHvi51JhXDn0/FBgUWHlP/KyK7PtjA4MCe3IqMgoM1D/A6vv8c/HZoMBgAyuvbZznM8rso9+vAoMrNLYxDjAQdgOrh23MRdtXgUGBlVeRQ/zMNjDgABOjTgrlAAM2MLYxey75fSgwKHBXAVBk3ykbGHCA8bbaAQaqbmBsYx5d+vkqMCjwyyc6iuw7ZQMDDjCf1E8BHWAgwwbGNubRkM9LgUGBd5/QKLLvlA0MOMDcUWTFTHyFhv/XXi+6Bn8GCgyLF9i1id7vxuY7pcCAA8ykIqurAwxctYEr2GyvUNvY22sFBgU+8hStVOLKP2PGIqPAoMCrbmNFVmQFBhzg2UVWgzlFdvtxgMEGrvQk3C7649TBNlZgYHyBUeRoRV62xAoMCsyTIiuxbazAwPkCe/t87q+jxoqswIANHKH6inx/kcuVWIFBgTlRZCW2jRUYFLjvqVVph9rGipy6yAoMNjCKXKrIaUqswKDA3FBkJbaNFRhWKbC3z7YxwYuswGADo8iKrMCAA7xwkf03q2MUeeoV2ssrV2uSXKsVGBLzEkuRGVvkoSVWYFBgEhZZiQtsYwWGIgX29tk2JlmRFRhsYBSZGUVWYFBg27dwkZV4TpG7vssKDMkL7AmLbZx0Gysw2MAoMjOKrMCgwCiyEs8osgJDYr/Rj5WHoZ5wUgAAAABJRU5ErkJggg==";
+
+    public static Bitmap bitmap() {
+        byte[] bytes = Base64.decode(PNG_BASE64, Base64.DEFAULT);
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+    }
+}
