@@ -561,6 +561,73 @@ public class MainActivity extends android.app.Activity {
                 initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
     }
 
+    private void showSettings(){
+        screen=4;
+        host.removeAllViews();
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+
+        p.addView(title("Settings"));
+
+        LinearLayout langCard=card();
+        langCard.addView(menuHeading("Language"));
+        langCard.addView(small(tr("زبان نمایش برنامه را انتخاب کن.","Choose the app display language.")));
+
+        Button fa=compact("فارسی");
+        Button enBtn=compact("English");
+        if(!en())fa.setBackground(accentDrawable());
+        if(en())enBtn.setBackground(accentDrawable());
+
+        LinearLayout choices=new LinearLayout(this);
+        choices.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(54),1);
+        lp.setMargins(dp(3),dp(10),dp(3),0);
+        choices.addView(fa,lp);
+        LinearLayout.LayoutParams lp2=new LinearLayout.LayoutParams(0,dp(54),1);
+        lp2.setMargins(dp(3),dp(10),dp(3),0);
+        choices.addView(enBtn,lp2);
+        langCard.addView(choices);
+
+        fa.setOnClickListener(v->setLanguage("fa"));
+        enBtn.setOnClickListener(v->setLanguage("en"));
+        p.addView(langCard);
+
+        LinearLayout offline=card();
+        offline.addView(menuHeading("Offline & Privacy"));
+        offline.addView(small(tr(
+                "برنامه برای استفاده روزمره به اینترنت نیاز ندارد. کارها، یادداشت‌ها و تاریخچه روی خود گوشی ذخیره می‌شوند.",
+                "The app does not need internet for normal use. Tasks, notes and history are stored locally on this device.")));
+        p.addView(offline);
+
+        sv.addView(p);
+        host.addView(sv);
+    }
+
+    private void setLanguage(String value){
+        language=value;
+        getSharedPreferences("goals_settings",MODE_PRIVATE).edit().putString("language",value).apply();
+        buildDrawer();
+        showSettings();
+    }
+
+    private boolean en(){
+        return "en".equals(language);
+    }
+
+    private String tr(String fa,String english){
+        return en()?english:fa;
+    }
+
+    private String localizedDate(LocalDate date,boolean weekday){
+        if(!en())return weekday?PersianDate.formatWithWeekday(date):PersianDate.format(date);
+        DateTimeFormatter f=DateTimeFormatter.ofPattern(weekday?"EEEE, MMM d, yyyy":"MMM d, yyyy",Locale.ENGLISH);
+        return date.format(f);
+    }
+
+    private String localNumber(String value){
+        return en()?value:PersianDate.toPersianDigits(value);
+    }
+
     private boolean canExact(){if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true;return ((AlarmManager)getSystemService(ALARM_SERVICE)).canScheduleExactAlarms();}
     private void openExact(){if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)try{startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:"+getPackageName())));}catch(Exception e){startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}}
     private String repeatText(TaskItem t){if(t==null)return "";String[] l={"ی","د","س","چ","پ","ج","ش"};int[] c={1,2,3,4,5,6,7};List<String> a=new ArrayList<>();for(int i=0;i<7;i++)if((t.dayMask&(1<<c[i]))!=0)a.add(l[i]);return a.size()==7?"هر روز":String.join("، ",a);}
