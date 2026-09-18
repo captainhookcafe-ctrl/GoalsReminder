@@ -24,18 +24,24 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
+
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -45,15 +51,25 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends android.app.Activity {
-    private static final int BG=Color.rgb(11,14,19), SURFACE=Color.rgb(24,28,36),
-            SURFACE2=Color.rgb(34,39,49), TEXT=Color.rgb(238,241,246),
-            MUTED=Color.rgb(155,164,178), ACCENT=Color.rgb(138,180,248),
-            GOOD=Color.rgb(93,200,139);
+    private static final int BG=Color.rgb(7,10,18), SURFACE=Color.rgb(21,27,43),
+            SURFACE2=Color.rgb(30,37,57), TEXT=Color.rgb(242,245,252),
+            MUTED=Color.rgb(151,162,183), ACCENT=Color.rgb(61,155,255),
+            PURPLE=Color.rgb(132,82,255), GOOD=Color.rgb(97,210,155);
     private DbHelper db;
+    private FrameLayout root;
     private FrameLayout host;
+    private LinearLayout drawer;
+    private View scrim;
+    private TextView hamburger;
+    private boolean drawerOpen=false;
     private int screen=0;
     private static final int REQ_EXPORT_BACKUP=501;
     private static final int REQ_IMPORT_BACKUP=502;
+    private String pendingBackupType="full";
+    private LocalDate pendingBackupFrom=null;
+    private LocalDate pendingBackupTo=null;
+    private LocalDate rangeFrom=LocalDate.now().withDayOfMonth(1);
+    private LocalDate rangeTo=LocalDate.now();
 
     @Override protected void onCreate(Bundle b){
         super.onCreate(b);
@@ -71,26 +87,158 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void buildShell(){
-        FrameLayout root=new FrameLayout(this); root.setBackgroundColor(BG); root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        host=new FrameLayout(this);
-        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(-1,-1); hp.setMargins(dp(76),0,0,0); root.addView(host,hp);
+        root=new FrameLayout(this);
+        root.setBackground(appBackground());
+        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
-        LinearLayout rail=new LinearLayout(this); rail.setOrientation(LinearLayout.VERTICAL);
-        rail.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL); rail.setPadding(dp(5),dp(18),dp(5),0); rail.setBackgroundColor(Color.rgb(17,20,27));
-        Button a=rail("☷\nامروز"), h=rail("◷\nتاریخچه"), n=rail("▥\nآنالیز");
-        rail.addView(a); rail.addView(h); rail.addView(n);
-        a.setOnClickListener(v->showToday()); h.setOnClickListener(v->showHistory()); n.setOnClickListener(v->showAnalysisWeek());
-        root.addView(rail,new FrameLayout.LayoutParams(dp(76),-1,Gravity.LEFT));
+        host=new FrameLayout(this);
+        host.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        root.addView(host,new FrameLayout.LayoutParams(-1,-1));
+
+        scrim=new View(this);
+        scrim.setBackgroundColor(Color.argb(150,0,0,0));
+        scrim.setVisibility(View.GONE);
+        scrim.setOnClickListener(v->closeDrawer());
+        root.addView(scrim,new FrameLayout.LayoutParams(-1,-1));
+
+        drawer=new LinearLayout(this);
+        drawer.setOrientation(LinearLayout.VERTICAL);
+        drawer.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        drawer.setPadding(dp(18),dp(16),dp(18),dp(22));
+        drawer.setBackground(glassDrawable(240,22));
+        drawer.setElevation(dp(22));
+        drawer.setVisibility(View.GONE);
+        FrameLayout.LayoutParams dpv=new FrameLayout.LayoutParams(dp(292),-1,Gravity.LEFT);
+        dpv.setMargins(dp(8),dp(8),0,dp(8));
+        root.addView(drawer,dpv);
+
+        hamburger=new TextView(this);
+        hamburger.setText("☰");
+        hamburger.setTextColor(TEXT);
+        hamburger.setTextSize(25);
+        hamburger.setGravity(Gravity.CENTER);
+        hamburger.setBackground(glassDrawable(225,18));
+        hamburger.setElevation(dp(14));
+        hamburger.setOnClickListener(v->openDrawer());
+        FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(dp(54),dp(54),Gravity.LEFT|Gravity.TOP);
+        hp.setMargins(dp(14),dp(12),0,0);
+        root.addView(hamburger,hp);
+
+        buildDrawer();
         setContentView(root);
     }
 
-    private Button rail(String s){
-        Button b=new Button(this); b.setText(s); b.setTextColor(TEXT); b.setTextSize(11); b.setAllCaps(false);
-        b.setGravity(Gravity.CENTER); b.setBackgroundColor(Color.TRANSPARENT);
-        b.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(82))); return b;
+    private void buildDrawer(){
+        drawer.removeAllViews();
+
+        LinearLayout top=new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView logo=new ImageView(this);
+        logo.setImageResource(R.drawable.logo_mark_white);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        top.addView(logo,new LinearLayout.LayoutParams(dp(58),dp(44)));
+
+        View fill=new View(this);
+        top.addView(fill,new LinearLayout.LayoutParams(0,1,1));
+
+        TextView close=new TextView(this);
+        close.setText("×");
+        close.setTextColor(TEXT);
+        close.setTextSize(30);
+        close.setGravity(Gravity.CENTER);
+        close.setOnClickListener(v->closeDrawer());
+        top.addView(close,new LinearLayout.LayoutParams(dp(46),dp(46)));
+        drawer.addView(top);
+
+        TextView brand=new TextView(this);
+        brand.setText("Goals Reminder");
+        brand.setTextColor(TEXT);
+        brand.setTextSize(24);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        brand.setPadding(0,dp(12),0,dp(4));
+        drawer.addView(brand);
+
+        TextView tagline=new TextView(this);
+        tagline.setText("Plan  •  Track  •  Reflect  •  Grow");
+        tagline.setTextColor(MUTED);
+        tagline.setTextSize(12);
+        tagline.setPadding(0,0,0,dp(22));
+        drawer.addView(tagline);
+
+        addMenuItem("Today",R.drawable.ic_today,0,()->showToday());
+        addMenuItem("History",R.drawable.ic_history,1,()->showHistory());
+        addMenuItem("Analytics",R.drawable.ic_analytics,2,()->showAnalysisWeek());
+        addMenuItem("Backup & Restore",R.drawable.ic_backup,3,()->showBackupRestore());
+
+        View spacer=new View(this);
+        drawer.addView(spacer,new LinearLayout.LayoutParams(1,0,1));
+
+        TextView footer=new TextView(this);
+        footer.setText("Goals Reminder\nOffline • Local-first");
+        footer.setTextColor(Color.rgb(111,124,151));
+        footer.setTextSize(11);
+        footer.setGravity(Gravity.LEFT);
+        drawer.addView(footer);
     }
 
-    private void render(){ if(host==null)return; if(screen==0)showToday(); else if(screen==1)showHistory(); else showAnalysisWeek(); }
+    private void addMenuItem(String label,int iconRes,int target,Runnable action){
+        LinearLayout row=new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14),0,dp(12),0);
+        row.setBackground(menuItemDrawable(screen==target));
+        row.setClickable(true);
+
+        ImageView icon=new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(screen==target?Color.WHITE:Color.rgb(185,196,218));
+        row.addView(icon,new LinearLayout.LayoutParams(dp(28),dp(28)));
+
+        TextView name=new TextView(this);
+        name.setText(label);
+        name.setTextColor(TEXT);
+        name.setTextSize(15);
+        name.setTypeface(screen==target?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);
+        name.setPadding(dp(16),0,0,0);
+        row.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(58));
+        rp.setMargins(0,dp(5),0,dp(5));
+        drawer.addView(row,rp);
+
+        row.setOnClickListener(v->{ action.run(); closeDrawer(); });
+    }
+
+    private void openDrawer(){
+        if(drawerOpen)return;
+        drawerOpen=true;
+        buildDrawer();
+        scrim.setVisibility(View.VISIBLE);
+        drawer.setVisibility(View.VISIBLE);
+        drawer.setTranslationX(-dp(320));
+        hamburger.setVisibility(View.INVISIBLE);
+        drawer.animate().translationX(0).setDuration(220).start();
+    }
+
+    private void closeDrawer(){
+        if(!drawerOpen)return;
+        drawerOpen=false;
+        drawer.animate().translationX(-dp(320)).setDuration(180).withEndAction(()->{
+            drawer.setVisibility(View.GONE);
+            scrim.setVisibility(View.GONE);
+            hamburger.setVisibility(View.VISIBLE);
+        }).start();
+    }
+
+    private void render(){
+        if(host==null)return;
+        if(screen==0)showToday();
+        else if(screen==1)showHistory();
+        else if(screen==2)showAnalysisWeek();
+        else showBackupRestore();
+    }
 
     private void showToday(){
         screen=0; host.removeAllViews(); ScrollView sv=new ScrollView(this); LinearLayout p=page();
@@ -113,18 +261,6 @@ public class MainActivity extends android.app.Activity {
         TextView pl=small(period==0?"نیمه اول روز · ۰۰:۰۰ تا ۱۲:۰۰":"نیمه دوم روز · ۱۲:۰۰ تا ۲۴:۰۰"); pl.setTextColor(ACCENT); p.addView(pl);
         notesEditor(p,today,period);
 
-        p.addView(section("پشتیبان‌گیری"));
-        TextView backupInfo=small("فایل پشتیبان فقط در محلی که خودت روی گوشی انتخاب می‌کنی ذخیره می‌شود.");
-        p.addView(backupInfo);
-        LinearLayout backupActions=new LinearLayout(this);
-        backupActions.setOrientation(LinearLayout.HORIZONTAL);
-        Button restore=compact("بازیابی");
-        Button backup=compact("پشتیبان‌گیری");
-        backupActions.addView(restore,new LinearLayout.LayoutParams(0,dp(52),1));
-        backupActions.addView(backup,new LinearLayout.LayoutParams(0,dp(52),1));
-        restore.setOnClickListener(v->confirmRestore());
-        backup.setOnClickListener(v->chooseBackupLocation());
-        p.addView(backupActions);
 
         sv.addView(p); host.addView(sv);
     }
@@ -235,103 +371,152 @@ public class MainActivity extends android.app.Activity {
     }
 
 
-    private void chooseBackupLocation(){
-        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/octet-stream");
-        i.putExtra(Intent.EXTRA_TITLE,"GoalsReminder-backup-"+LocalDate.now()+".db");
-        startActivityForResult(i,REQ_EXPORT_BACKUP);
+    private void showBackupRestore(){
+        screen=3;
+        host.removeAllViews();
+        ScrollView sv=new ScrollView(this);
+        LinearLayout p=page();
+
+        p.addView(title("Backup & Restore"));
+        TextView intro=small("پشتیبان‌ها فقط در فایلی که خودت انتخاب می‌کنی ذخیره می‌شوند و به هیچ سروری ارسال نمی‌شوند.");
+        intro.setTextColor(Color.rgb(159,174,205));
+        intro.setPadding(0,dp(6),0,dp(16));
+        p.addView(intro);
+
+        LinearLayout full=card();
+        TextView fullTitle=menuHeading("Full Backup");
+        full.addView(fullTitle);
+        full.addView(small("همه کارها، تمام تاریخچه و همه یادداشت‌ها"));
+        Button fullBtn=action("Create Full Backup");
+        fullBtn.setOnClickListener(v->startBackup(true,null,null));
+        full.addView(fullBtn);
+        p.addView(full);
+
+        LinearLayout range=card();
+        range.addView(menuHeading("Date Range Backup"));
+        range.addView(small("فقط تاریخچه و یادداشت‌های بازه‌ای که انتخاب می‌کنی"));
+
+        Button from=compact("از: "+PersianDate.format(rangeFrom));
+        Button to=compact("تا: "+PersianDate.format(rangeTo));
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(52));
+        bp.setMargins(0,dp(8),0,dp(4));
+        range.addView(from,bp);
+        LinearLayout.LayoutParams bp2=new LinearLayout.LayoutParams(-1,dp(52));
+        bp2.setMargins(0,dp(4),0,dp(8));
+        range.addView(to,bp2);
+
+        from.setOnClickListener(v->pickDate(rangeFrom,d->{rangeFrom=d;showBackupRestore();}));
+        to.setOnClickListener(v->pickDate(rangeTo,d->{rangeTo=d;showBackupRestore();}));
+
+        Button rangeBtn=action("Create Range Backup");
+        rangeBtn.setOnClickListener(v->{
+            if(rangeTo.isBefore(rangeFrom)){
+                Toast.makeText(this,"تاریخ پایان قبل از شروع است",Toast.LENGTH_SHORT).show();
+                return;
+            }
+            startBackup(false,rangeFrom,rangeTo);
+        });
+        range.addView(rangeBtn);
+        p.addView(range);
+
+        LinearLayout restore=card();
+        restore.addView(menuHeading("Restore"));
+        restore.addView(small("Full Backup جایگزین کامل است؛ بکاپ بازه‌ای با تاریخچه فعلی ادغام می‌شود."));
+        Button restoreBtn=compact("Choose Backup File");
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,dp(52));
+        rp.setMargins(0,dp(10),0,0);
+        restore.addView(restoreBtn,rp);
+        restoreBtn.setOnClickListener(v->chooseRestoreFile());
+        p.addView(restore);
+
+        sv.addView(p);
+        host.addView(sv);
     }
 
-    private void confirmRestore(){
-        new AlertDialog.Builder(this)
-                .setTitle("بازیابی پشتیبان")
-                .setMessage("بازیابی، اطلاعات فعلی برنامه را با فایل پشتیبان جایگزین می‌کند. ادامه می‌دهی؟")
-                .setPositiveButton("ادامه",(d,w)->chooseRestoreFile())
-                .setNegativeButton("انصراف",null)
-                .show();
+    private void startBackup(boolean full,LocalDate from,LocalDate to){
+        pendingBackupType=full?"full":"range";
+        pendingBackupFrom=from;
+        pendingBackupTo=to;
+
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        String name=full
+                ?"GoalsReminder_Full_"+LocalDate.now()+".grbackup"
+                :"GoalsReminder_"+from+"_to_"+to+".grbackup";
+        i.putExtra(Intent.EXTRA_TITLE,name);
+        startActivityForResult(i,REQ_EXPORT_BACKUP);
     }
 
     private void chooseRestoreFile(){
         Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/octet-stream");
+        i.setType("*/*");
         startActivityForResult(i,REQ_IMPORT_BACKUP);
     }
 
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
-        if(resultCode!=RESULT_OK || data==null || data.getData()==null) return;
+        if(resultCode!=RESULT_OK || data==null || data.getData()==null)return;
         Uri uri=data.getData();
-        if(requestCode==REQ_EXPORT_BACKUP) exportBackup(uri);
-        else if(requestCode==REQ_IMPORT_BACKUP) importBackup(uri);
+        if(requestCode==REQ_EXPORT_BACKUP)exportBackup(uri);
+        else if(requestCode==REQ_IMPORT_BACKUP)prepareRestore(uri);
     }
 
     private void exportBackup(Uri uri){
         try{
-            db.close();
-            File src=getDatabasePath("goals_reminder.db");
-            try(InputStream in=new FileInputStream(src);
-                OutputStream out=getContentResolver().openOutputStream(uri,"w")){
-                if(out==null) throw new IllegalStateException("مسیر ذخیره در دسترس نیست");
-                byte[] buf=new byte[8192];
-                int n;
-                while((n=in.read(buf))>0) out.write(buf,0,n);
-                out.flush();
+            boolean full="full".equals(pendingBackupType);
+            JSONObject json=db.createBackup(pendingBackupFrom,pendingBackupTo,full);
+            try(OutputStream out=getContentResolver().openOutputStream(uri,"w");
+                OutputStreamWriter writer=new OutputStreamWriter(out,StandardCharsets.UTF_8)){
+                writer.write(json.toString(2));
+                writer.flush();
             }
-            db=new DbHelper(this);
-            Toast.makeText(this,"پشتیبان با موفقیت ذخیره شد",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,full?"Full Backup ساخته شد":"بکاپ بازه زمانی ساخته شد",Toast.LENGTH_LONG).show();
         }catch(Exception e){
-            db=new DbHelper(this);
-            Toast.makeText(this,"ذخیره پشتیبان ناموفق بود",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"ساخت فایل پشتیبان ناموفق بود",Toast.LENGTH_LONG).show();
         }
     }
 
-    private void importBackup(Uri uri){
-        File tmp=new File(getCacheDir(),"goals_restore_tmp.db");
+    private void prepareRestore(Uri uri){
         try{
+            StringBuilder sb=new StringBuilder();
             try(InputStream in=getContentResolver().openInputStream(uri);
-                OutputStream out=new FileOutputStream(tmp)){
-                if(in==null) throw new IllegalStateException("فایل قابل خواندن نیست");
-                byte[] buf=new byte[8192];
-                int n;
-                while((n=in.read(buf))>0) out.write(buf,0,n);
-                out.flush();
+                BufferedReader reader=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8))){
+                String line;
+                while((line=reader.readLine())!=null)sb.append(line).append('\n');
             }
+            JSONObject json=new JSONObject(sb.toString());
+            if(!"GoalsReminderBackup".equals(json.optString("format")))throw new IllegalArgumentException("invalid");
+            boolean full="full".equals(json.optString("type"));
+            String message=full
+                    ?"این Full Backup اطلاعات فعلی برنامه را جایگزین می‌کند. ادامه می‌دهی؟"
+                    :"این بکاپ بازه‌ای با تاریخچه و یادداشت‌های فعلی ادغام می‌شود. ادامه می‌دهی؟";
+            new AlertDialog.Builder(this)
+                    .setTitle("Restore Backup")
+                    .setMessage(message)
+                    .setPositiveButton("بازیابی",(d,w)->restoreParsedBackup(json))
+                    .setNegativeButton("انصراف",null)
+                    .show();
+        }catch(Exception e){
+            Toast.makeText(this,"فایل پشتیبان معتبر نیست",Toast.LENGTH_LONG).show();
+        }
+    }
 
-            byte[] header=new byte[16];
-            try(InputStream check=new FileInputStream(tmp)){
-                if(check.read(header)!=16 || !new String(header,StandardCharsets.US_ASCII).startsWith("SQLite format 3"))
-                    throw new IllegalArgumentException("not sqlite");
-            }
-
-            db.close();
-            File target=getDatabasePath("goals_reminder.db");
-            File parent=target.getParentFile();
-            if(parent!=null && !parent.exists()) parent.mkdirs();
-            try(InputStream in=new FileInputStream(tmp);
-                OutputStream out=new FileOutputStream(target,false)){
-                byte[] buf=new byte[8192];
-                int n;
-                while((n=in.read(buf))>0) out.write(buf,0,n);
-                out.flush();
-            }
-            new File(target.getPath()+"-wal").delete();
-            new File(target.getPath()+"-shm").delete();
-            new File(target.getPath()+"-journal").delete();
-
-            db=new DbHelper(this);
-            db.getReadableDatabase();
-            db.ensureDay(LocalDate.now());
+    private void restoreParsedBackup(JSONObject json){
+        try{
+            String type=db.restoreBackup(json);
             AlarmScheduler.scheduleAll(this);
-            Toast.makeText(this,"پشتیبان با موفقیت بازیابی شد",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"full".equals(type)?"Full Backup بازیابی شد":"بازه تاریخی بازیابی و ادغام شد",Toast.LENGTH_LONG).show();
             render();
         }catch(Exception e){
-            db=new DbHelper(this);
-            Toast.makeText(this,"فایل پشتیبان معتبر نیست یا بازیابی ناموفق بود",Toast.LENGTH_LONG).show();
-        }finally{
-            tmp.delete();
+            Toast.makeText(this,"بازیابی ناموفق بود",Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void pickDate(LocalDate initial,java.util.function.Consumer<LocalDate> result){
+        new DatePickerDialog(this,(v,y,m,d)->result.accept(LocalDate.of(y,m+1,d)),
+                initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
     }
 
     private boolean canExact(){if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true;return ((AlarmManager)getSystemService(ALARM_SERVICE)).canScheduleExactAlarms();}
@@ -339,13 +524,146 @@ public class MainActivity extends android.app.Activity {
     private String repeatText(TaskItem t){if(t==null)return "";String[] l={"ی","د","س","چ","پ","ج","ش"};int[] c={1,2,3,4,5,6,7};List<String> a=new ArrayList<>();for(int i=0;i<7;i++)if((t.dayMask&(1<<c[i]))!=0)a.add(l[i]);return a.size()==7?"هر روز":String.join("، ",a);}
     private String timeText(int h,int m){return PersianDate.toPersianDigits(String.format(Locale.US,"%02d:%02d",h,m));}
 
-    private LinearLayout page(){LinearLayout p=new LinearLayout(this);p.setOrientation(LinearLayout.VERTICAL);p.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);p.setPadding(dp(18),dp(18),dp(18),dp(40));return p;}
-    private LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setPadding(dp(12),dp(8),dp(12),dp(8));GradientDrawable g=new GradientDrawable();g.setColor(SURFACE);g.setCornerRadius(dp(14));l.setBackground(g);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(6),0,dp(6));l.setLayoutParams(lp);return l;}
-    private TextView title(String s){TextView t=new TextView(this);t.setText(s);t.setTextColor(TEXT);t.setTextSize(28);t.setTypeface(Typeface.DEFAULT_BOLD);t.setGravity(Gravity.RIGHT);return t;}
-    private TextView section(String s){TextView t=title(s);t.setTextSize(18);t.setPadding(0,dp(22),0,dp(8));return t;}
-    private TextView small(String s){TextView t=new TextView(this);t.setText(s);t.setTextColor(MUTED);t.setTextSize(13);t.setGravity(Gravity.RIGHT);return t;}
-    private EditText input(String hint){EditText e=new EditText(this);e.setHint(hint);e.setHintTextColor(MUTED);e.setTextColor(TEXT);e.setGravity(Gravity.RIGHT);e.setPadding(dp(12),dp(9),dp(12),dp(9));GradientDrawable g=new GradientDrawable();g.setColor(SURFACE2);g.setCornerRadius(dp(11));e.setBackground(g);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(5),0,dp(5));e.setLayoutParams(lp);return e;}
-    private Button action(String s){Button b=new Button(this);b.setText(s);b.setTextColor(Color.rgb(10,20,31));b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT_BOLD);GradientDrawable g=new GradientDrawable();g.setColor(ACCENT);g.setCornerRadius(dp(12));b.setBackground(g);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(0,dp(10),0,dp(8));b.setLayoutParams(lp);return b;}
-    private Button compact(String s){Button b=new Button(this);b.setText(s);b.setTextColor(TEXT);b.setTextSize(12);b.setAllCaps(false);GradientDrawable g=new GradientDrawable();g.setColor(SURFACE2);g.setCornerRadius(dp(10));b.setBackground(g);return b;}
+    private LinearLayout page(){
+        LinearLayout p=new LinearLayout(this);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        p.setPadding(dp(18),dp(18),dp(18),dp(44));
+        return p;
+    }
+
+    private LinearLayout card(){
+        LinearLayout l=new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(dp(15),dp(13),dp(15),dp(13));
+        l.setBackground(glassDrawable(190,18));
+        l.setElevation(dp(5));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(0,dp(7),0,dp(7));
+        l.setLayoutParams(lp);
+        return l;
+    }
+
+    private TextView title(String s){
+        TextView t=new TextView(this);
+        t.setText(s);
+        t.setTextColor(TEXT);
+        t.setTextSize(29);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.RIGHT);
+        return t;
+    }
+
+    private TextView section(String s){
+        TextView t=title(s);
+        t.setTextSize(20);
+        t.setPadding(0,dp(24),0,dp(8));
+        return t;
+    }
+
+    private TextView menuHeading(String s){
+        TextView t=new TextView(this);
+        t.setText(s);
+        t.setTextColor(TEXT);
+        t.setTextSize(18);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.LEFT);
+        t.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        t.setPadding(0,0,0,dp(5));
+        return t;
+    }
+
+    private TextView small(String s){
+        TextView t=new TextView(this);
+        t.setText(s);
+        t.setTextColor(MUTED);
+        t.setTextSize(13);
+        t.setGravity(Gravity.RIGHT);
+        return t;
+    }
+
+    private EditText input(String hint){
+        EditText e=new EditText(this);
+        e.setHint(hint);
+        e.setHintTextColor(Color.rgb(121,133,156));
+        e.setTextColor(TEXT);
+        e.setGravity(Gravity.RIGHT);
+        e.setPadding(dp(14),dp(11),dp(14),dp(11));
+        e.setBackground(inputDrawable());
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
+        lp.setMargins(0,dp(5),0,dp(5));
+        e.setLayoutParams(lp);
+        return e;
+    }
+
+    private Button action(String s){
+        Button b=new Button(this);
+        b.setText(s);
+        b.setTextColor(Color.WHITE);
+        b.setAllCaps(false);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setBackground(accentDrawable());
+        b.setElevation(dp(5));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(54));
+        lp.setMargins(0,dp(10),0,dp(8));
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private Button compact(String s){
+        Button b=new Button(this);
+        b.setText(s);
+        b.setTextColor(TEXT);
+        b.setTextSize(12);
+        b.setAllCaps(false);
+        b.setBackground(glassDrawable(195,12));
+        return b;
+    }
+
+    private GradientDrawable appBackground(){
+        return new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(7,10,18),Color.rgb(10,17,31),Color.rgb(18,12,35)});
+    }
+
+    private GradientDrawable glassDrawable(int alpha,int radius){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(alpha,34,43,66),Color.argb(Math.max(120,alpha-35),18,24,39)});
+        g.setCornerRadius(dp(radius));
+        g.setStroke(dp(1),Color.argb(68,154,179,235));
+        return g;
+    }
+
+    private GradientDrawable inputDrawable(){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(198,37,45,67),Color.argb(186,25,31,49)});
+        g.setCornerRadius(dp(12));
+        g.setStroke(dp(1),Color.argb(55,176,196,235));
+        return g;
+    }
+
+    private GradientDrawable accentDrawable(){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{ACCENT,Color.rgb(76,120,255),PURPLE});
+        g.setCornerRadius(dp(15));
+        g.setStroke(dp(1),Color.argb(125,196,213,255));
+        return g;
+    }
+
+    private GradientDrawable menuItemDrawable(boolean active){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                active
+                        ?new int[]{Color.argb(215,38,119,255),Color.argb(205,106,70,255)}
+                        :new int[]{Color.argb(90,42,51,72),Color.argb(70,24,30,47)});
+        g.setCornerRadius(dp(14));
+        g.setStroke(dp(1),active?Color.argb(130,176,205,255):Color.argb(42,155,177,220));
+        return g;
+    }
+
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
+
 }
