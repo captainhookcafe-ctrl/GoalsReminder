@@ -1042,13 +1042,27 @@ public class MainActivity extends android.app.Activity {
 
     private boolean canExact(){if(Build.VERSION.SDK_INT<Build.VERSION_CODES.S)return true;return ((AlarmManager)getSystemService(ALARM_SERVICE)).canScheduleExactAlarms();}
     private void openExact(){if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)try{startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:"+getPackageName())));}catch(Exception e){startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}}
-    private String repeatText(TaskItem t){if(t==null)return "";String[] l={"ی","د","س","چ","پ","ج","ش"};int[] c={1,2,3,4,5,6,7};List<String> a=new ArrayList<>();for(int i=0;i<7;i++)if((t.dayMask&(1<<c[i]))!=0)a.add(l[i]);return a.size()==7?"هر روز":String.join("، ",a);}
-    private String timeText(int h,int m){return PersianDate.toPersianDigits(String.format(Locale.US,"%02d:%02d",h,m));}
+    private String repeatText(TaskItem t){
+        if(t==null)return "";
+        String[] labels=en()
+                ?new String[]{"Sun","Mon","Tue","Wed","Thu","Fri","Sat"}
+                :new String[]{"ی","د","س","چ","پ","ج","ش"};
+        int[] days={1,2,3,4,5,6,7};
+        List<String> selected=new ArrayList<>();
+        for(int i=0;i<7;i++)if((t.dayMask&(1<<days[i]))!=0)selected.add(labels[i]);
+        if(selected.size()==7)return tr("هر روز","Every day");
+        return String.join(en()?", ":"، ",selected);
+    }
+
+    private String timeText(int h,int m){
+        String value=String.format(Locale.US,"%02d:%02d",h,m);
+        return en()?value:PersianDate.toPersianDigits(value);
+    }
 
     private LinearLayout page(){
         LinearLayout p=new LinearLayout(this);
         p.setOrientation(LinearLayout.VERTICAL);
-        p.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        p.setLayoutDirection(en()?View.LAYOUT_DIRECTION_LTR:View.LAYOUT_DIRECTION_RTL);
         p.setPadding(dp(18),dp(18),dp(18),dp(44));
         return p;
     }
@@ -1071,7 +1085,7 @@ public class MainActivity extends android.app.Activity {
         t.setTextColor(TEXT);
         t.setTextSize(29);
         t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setGravity(Gravity.RIGHT);
+        t.setGravity(en()?Gravity.LEFT:Gravity.RIGHT);
         return t;
     }
 
@@ -1099,7 +1113,7 @@ public class MainActivity extends android.app.Activity {
         t.setText(s);
         t.setTextColor(MUTED);
         t.setTextSize(13);
-        t.setGravity(Gravity.RIGHT);
+        t.setGravity(en()?Gravity.LEFT:Gravity.RIGHT);
         return t;
     }
 
@@ -1108,7 +1122,7 @@ public class MainActivity extends android.app.Activity {
         e.setHint(hint);
         e.setHintTextColor(Color.rgb(121,133,156));
         e.setTextColor(TEXT);
-        e.setGravity(Gravity.RIGHT);
+        e.setGravity(en()?Gravity.LEFT:Gravity.RIGHT);
         e.setPadding(dp(14),dp(11),dp(14),dp(11));
         e.setBackground(inputDrawable());
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);
@@ -1171,6 +1185,24 @@ public class MainActivity extends android.app.Activity {
                 new int[]{ACCENT,Color.rgb(76,120,255),PURPLE});
         g.setCornerRadius(dp(15));
         g.setStroke(dp(1),Color.argb(125,196,213,255));
+        return g;
+    }
+
+    private GradientDrawable activeTaskDrawable(){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(215,24,55,88),Color.argb(205,43,31,86)});
+        g.setCornerRadius(dp(18));
+        g.setStroke(dp(1),Color.argb(145,107,174,255));
+        return g;
+    }
+
+    private GradientDrawable overdueTaskDrawable(){
+        GradientDrawable g=new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(220,72,25,38),Color.argb(205,46,22,35)});
+        g.setCornerRadius(dp(18));
+        g.setStroke(dp(1),Color.argb(170,255,89,111));
         return g;
     }
 
