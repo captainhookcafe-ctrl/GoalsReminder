@@ -22,6 +22,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -77,6 +79,16 @@ public class MainActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        FrameLayout root = findViewById(R.id.root);
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int left = insets.getSystemWindowInsetLeft();
+            int top = insets.getSystemWindowInsetTop();
+            int right = insets.getSystemWindowInsetRight();
+            int bottom = insets.getSystemWindowInsetBottom();
+            v.setPadding(left, top, right, bottom);
+            return insets;
+        });
+        root.requestApplyInsets();
         getWindow().setStatusBarColor(android.graphics.Color.rgb(5,3,12));
         getWindow().setNavigationBarColor(android.graphics.Color.rgb(5,3,12));
         webView = findViewById(R.id.webview);
@@ -137,6 +149,8 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setTextZoom(100);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(false);
         webView.setLongClickable(false);
         webView.setHapticFeedbackEnabled(false);
         webView.addJavascriptInterface(new PrimeBridge(), "PrimeBridge");
@@ -415,6 +429,6 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public void exportBackup() { runOnUiThread(MainActivity.this::exportBackup); }
         @JavascriptInterface public void importBackup() { runOnUiThread(MainActivity.this::importBackup); }
-        @JavascriptInterface public String appVersion() { return "2.0-local"; }
+        @JavascriptInterface public String appVersion() { return "2.1-local"; }
     }
 }
